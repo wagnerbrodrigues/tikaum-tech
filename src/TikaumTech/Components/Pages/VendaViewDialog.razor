@@ -1,0 +1,113 @@
+@* Visualização somente leitura de uma venda — única ação disponível para registros
+   disabled/deleted (TIKAUM_SPEC.md §6). Os links Origem/Substituído por navegam
+   dentro do próprio diálogo. *@
+@inject VendaService VendaService
+
+<MudDialog>
+    <DialogContent>
+        @if (_venda is null)
+        {
+            <div class="d-flex justify-center pa-8">
+                <MudProgressCircular Indeterminate="true" Color="Color.Primary" />
+            </div>
+        }
+        else
+        {
+            <MudGrid Spacing="2">
+                <MudItem xs="6" md="3">
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Data</MudText>
+                    <MudText Class="tk-mono">@_venda.DataHora.ToString("dd/MM/yyyy")</MudText>
+                </MudItem>
+                <MudItem xs="6" md="4">
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Cliente</MudText>
+                    <MudText>@(_venda.Pessoa?.Nome ?? "Avulsa")</MudText>
+                </MudItem>
+                <MudItem xs="6" md="2">
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Status</MudText>
+                    <div class="mt-1"><VendaBadge Venda="_venda" /></div>
+                </MudItem>
+                <MudItem xs="6" md="3" Style="text-align:right">
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Total</MudText>
+                    <MudText Typo="Typo.h6" Class="tk-mono">@_venda.ValorTotal.ToString("C", _ptBR)</MudText>
+                </MudItem>
+            </MudGrid>
+
+            @if (!string.IsNullOrWhiteSpace(_venda.Usuario))
+            {
+                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-3 d-block">Usuário</MudText>
+                <MudText Typo="Typo.body2">@_venda.Usuario</MudText>
+            }
+
+            @if (!string.IsNullOrWhiteSpace(_venda.Observacao))
+            {
+                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-3 d-block">Observação</MudText>
+                <MudText Typo="Typo.body2">@_venda.Observacao</MudText>
+            }
+
+            @if (_venda.AdjustedAt is not null)
+            {
+                <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-3">
+                    @(_venda.AdjustedReason == VendaAdjustedReason.Delete ? "Excluída" : "Editada")
+                    em <span class="tk-mono">@_venda.AdjustedAt.Value.ToString("dd/MM/yyyy HH:mm")</span>
+                </MudText>
+            }
+
+            @if (_venda.Status == VendaStatus.Disabled && _venda.SubstituidaPor is not null)
+            {
+                <MudText Typo="Typo.body2" Class="mt-1">
+                    Substituído por:
+                    <MudLink OnClick="@(() => CarregarAsync(_venda.SubstituidaPor!.Id))">
+                        venda #@_venda.SubstituidaPor.Id
+                    </MudLink>
+                </MudText>
+            }
+            @if (_venda.OriginId is not null)
+            {
+                <MudText Typo="Typo.body2" Class="mt-1">
+                    Origem:
+                    <MudLink OnClick="@(() => CarregarAsync(_venda.OriginId!.Value))">
+                        venda #@_venda.OriginId
+                    </MudLink>
+                </MudText>
+            }
+
+            <MudSimpleTable Dense="true" Class="mt-4" Style="overflow-x:auto">
+                <thead>
+                    <tr>
+                        <th>Item</th>
+                        <th style="text-align:center">Qtd</th>
+                        <th style="text-align:right">Preço unit.</th>
+                        <th style="text-align:right">Total</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var item in _venda.Itens)
+                    {
+                        <tr>
+                            <td>@(item.Produto?.Nome ?? item.Servico?.Nome ?? item.DescricaoLivre ?? "Item")</td>
+                            <td class="tk-mono" style="text-align:center">@item.Quantidade.ToString("0.###")</td>
+                            <td class="tk-mono" style="text-align:right">@item.ValorUnitario.ToString("C", _ptBR)</td>
+                            <td class="tk-mono" style="text-align:right">@item.ValorTotal.ToString("C", _ptBR)</td>
+                        </tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => MudDialog.Close(DialogResult.Ok(true)))">Fechar</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    private static readonly System.Globalization.CultureInfo _ptBR = new("pt-BR");
+
+    [CascadingParameter] IMudDialogInstance MudDialog { get; set; } = null!;
+    [Parameter] public int VendaId { get; set; }
+
+    private Venda? _venda;
+
+    protected override async Task OnInitializedAsync() => await CarregarAsync(VendaId);
+
+    private async Task CarregarAsync(int id) => _venda = await VendaService.ObterAsync(id);
+}

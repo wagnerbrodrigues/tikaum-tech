@@ -1,0 +1,73 @@
+@using TikaumTech.Data
+@inject UsuarioService UsuarioService
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="_form">
+            <MudTextField @bind-Value="_username" Label="Usuário" Required="true"
+                          RequiredError="Usuário é obrigatório." MaxLength="50" Counter="50" Class="mb-3" />
+            <MudTextField @bind-Value="_email" Label="E-mail" InputType="InputType.Email"
+                          MaxLength="200" Class="mb-3" />
+            <MudTextField @bind-Value="_senha"
+                          Label="@(EhEdicao ? "Nova senha (deixe em branco para não alterar)" : "Senha")"
+                          InputType="InputType.Password" Required="@(!EhEdicao)"
+                          RequiredError="Senha é obrigatória." MaxLength="100" />
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => MudDialog.Cancel())" Disabled="_salvando">Cancelar</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SalvarAsync" Disabled="_salvando">
+            @if (_salvando) { <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-1" /> }
+            Salvar
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] IMudDialogInstance MudDialog { get; set; } = null!;
+    [Parameter] public ApplicationUser? Usuario { get; set; }
+
+    private bool EhEdicao => Usuario is not null;
+
+    private MudForm _form = null!;
+    private string _username = "";
+    private string? _email;
+    private string _senha = "";
+    private bool _salvando;
+
+    protected override void OnParametersSet()
+    {
+        if (Usuario is not null)
+        {
+            _username = Usuario.UserName ?? "";
+            _email = Usuario.Email;
+        }
+    }
+
+    private async Task SalvarAsync()
+    {
+        await _form.ValidateAsync();
+        if (!_form.IsValid) return;
+
+        _salvando = true;
+        try
+        {
+            if (EhEdicao)
+                await UsuarioService.AtualizarAsync(Usuario!.Id, _username, _email,
+                    string.IsNullOrWhiteSpace(_senha) ? null : _senha);
+            else
+                await UsuarioService.CriarAsync(_username, _email, _senha);
+
+            MudDialog.Close();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Erro ao salvar: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _salvando = false;
+        }
+    }
+}

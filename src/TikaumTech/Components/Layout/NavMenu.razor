@@ -1,0 +1,43 @@
+@* Navegação da sidebar (TIKAUM_SPEC.md §13). "Sair" é um <form method="post"> de
+   verdade — o endpoint /Account/Logout só aceita POST (ver comentário histórico
+   que estava em MainLayout.razor, Rodada 12). *@
+<nav class="tk-nav">
+    <NavLink href="/" Match="NavLinkMatch.All">
+        <MudIcon Icon="@Icons.Material.Filled.Dashboard" /><span>Dashboard</span>
+    </NavLink>
+    <NavLink href="/pessoas">
+        <MudIcon Icon="@Icons.Material.Filled.People" /><span>Clientes</span>
+    </NavLink>
+    <NavLink href="/produtos">
+        <MudIcon Icon="@Icons.Material.Filled.Inventory2" /><span>Produtos</span>
+    </NavLink>
+    <NavLink href="/servicos">
+        <MudIcon Icon="@Icons.Material.Filled.ContentCut" /><span>Serviços</span>
+    </NavLink>
+    <NavLink href="/vendas">
+        <MudIcon Icon="@Icons.Material.Filled.ShoppingBag" /><span>Vendas</span>
+    </NavLink>
+    <NavLink href="/relatorios">
+        <MudIcon Icon="@Icons.Material.Filled.Assessment" /><span>Relatórios</span>
+    </NavLink>
+
+    <div class="tk-nav-sep"></div>
+
+    <NavLink href="/usuarios">
+        <MudIcon Icon="@Icons.Material.Filled.ManageAccounts" /><span>Usuários</span>
+    </NavLink>
+    <NavLink href="/backup">
+        <MudIcon Icon="@Icons.Material.Filled.Backup" /><span>Backup</span>
+    </NavLink>
+    <NavLink href="/Account/Manage/ChangePassword">
+        <MudIcon Icon="@Icons.Material.Filled.Person" /><span>Perfil</span>
+    </NavLink>
+
+    <form action="/Account/Logout" method="post">
+        <AntiforgeryToken />
+        <input type="hidden" name="returnUrl" value="" />
+        <button type="submit" class="tk-nav-btn">
+            <MudIcon Icon="@Icons.Material.Filled.Logout" /><span>Sair</span>
+        </button>
+    </form>
+</nav>

@@ -1,0 +1,760 @@
+/* ============================================================================
+   Identidade visual Tikaum-Tech (fonte de verdade: TIKAUM_SPEC.md §13)
+   Dark/gold de estúdio de tatuagem — zero branco ou cinza claro em qualquer tela.
+   ============================================================================ */
+
+/* ---------- Design tokens ---------- */
+:root {
+    --color-bg:             #111110;
+    --color-surface:        #1C1C1A;
+    --color-surface-alt:    #242420;
+    --color-border:         rgba(196, 162, 101, 0.15);
+    --color-accent:         #C4A265;
+    --color-accent-dim:     rgba(196, 162, 101, 0.12);
+    --color-text-primary:   #E8DDC8;
+    --color-text-secondary: #7A7060;
+    --color-text-muted:     #4A4640;
+    --color-success-bg:     #1E3D28;
+    --color-success-text:   #5DBF7A;
+    --color-danger-bg:      #3D1E1E;
+    --color-danger-text:    #BF5D5D;
+    --color-warning-bg:     #3D300A;
+    --color-warning-text:   #D4A017;
+    --color-disabled-bg:    #1A1A18;
+    --color-disabled-text:  #4A4640;
+
+    /* Fallbacks locais: o app precisa continuar usável offline (CLAUDE.md) */
+    --font-display: 'Cinzel', Georgia, 'Times New Roman', serif;
+    --font-deco:    'Cinzel Decorative', 'Cinzel', Georgia, serif;
+    --font-body:    'Inter', 'Segoe UI', system-ui, sans-serif;
+    --font-mono:    'JetBrains Mono', Consolas, 'Courier New', monospace;
+}
+
+html, body {
+    background-color: var(--color-bg);
+    color: var(--color-text-primary);
+    font-family: var(--font-body);
+    margin: 0;
+    min-height: 100vh;
+}
+
+::selection { background: var(--color-accent-dim); color: var(--color-accent); }
+
+/* Scrollbar fina dourada */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--color-bg); }
+::-webkit-scrollbar-thumb { background: rgba(196, 162, 101, 0.3); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--color-accent); }
+
+.blazor-error-boundary {
+    background: var(--color-danger-bg);
+    border-left: 3px solid var(--color-danger-text);
+    color: var(--color-text-primary);
+    padding: 1rem;
+}
+
+.blazor-error-boundary::after {
+    content: "Ocorreu um erro no servidor. Recarregue a página.";
+}
+
+/* Validação de formulário (EditForm) */
+.valid.modified:not([type=checkbox]) { outline: 1px solid var(--color-success-text); }
+.invalid { outline: 1px solid var(--color-danger-text); }
+.validation-message { color: var(--color-danger-text); font-size: 0.85rem; }
+
+/* ============================================================================
+   Shell global — sidebar 240px + topbar 64px + conteúdo + rodapé decorativo
+   ============================================================================ */
+.tk-shell { min-height: 100vh; }
+
+.tk-sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    width: 240px;
+    background: var(--color-surface);
+    border-right: 1px solid var(--color-border);
+    display: flex;
+    flex-direction: column;
+    z-index: 1300;
+    transition: transform 0.2s ease;
+    overflow: hidden;
+}
+
+.tk-main-col {
+    margin-left: 240px;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    transition: margin-left 0.2s ease;
+}
+
+.tk-shell.tk-sb-closed .tk-sidebar { transform: translateX(-100%); }
+.tk-shell.tk-sb-closed .tk-main-col { margin-left: 0; }
+
+.tk-sidebar-overlay { display: none; }
+
+@media (max-width: 900px) {
+    .tk-main-col { margin-left: 0; }
+    /* Sem a classe tk-sb-open (estado inicial, antes do shell.js rodar), o off-canvas
+       fica fechado — o servidor renderiza o shell sem classe de estado */
+    .tk-shell:not(.tk-sb-open) .tk-sidebar { transform: translateX(-100%); }
+    .tk-shell.tk-sb-open .tk-sidebar { box-shadow: 0 0 40px rgba(0, 0, 0, 0.7); }
+    .tk-shell.tk-sb-open .tk-sidebar-overlay {
+        display: block;
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.6);
+        z-index: 1250;
+    }
+}
+
+/* --- Logo block --- */
+.tk-logo-block { padding: 22px 16px 18px; text-align: center; }
+.tk-logo-block svg { display: block; margin: 0 auto; }
+.tk-logo-name {
+    font-family: var(--font-display);
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: 4px;
+    color: var(--color-accent);
+    margin-top: 10px;
+}
+.tk-logo-sub {
+    font-size: 9px;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    color: var(--color-text-muted);
+    margin-top: 5px;
+}
+.tk-logo-tagline {
+    font-family: var(--font-deco);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--color-accent);
+    margin-top: 12px;
+}
+
+.tk-sidebar-sep { border-bottom: 1px solid var(--color-border); margin: 0 16px; }
+
+/* --- Navegação --- */
+/* z-index: mantém os links acima da arte absoluta do skull em telas baixas */
+.tk-nav { padding: 10px 0; flex: 1; overflow-y: auto; overflow-x: hidden; position: relative; z-index: 1; }
+
+.tk-nav a,
+.tk-nav .tk-nav-btn {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    box-sizing: border-box;
+    padding: 10px 20px 10px 17px;
+    border: none;
+    border-left: 3px solid transparent;
+    background: none;
+    color: var(--color-text-secondary);
+    font-family: var(--font-body);
+    font-size: 14px;
+    text-decoration: none;
+    cursor: pointer;
+    text-align: left;
+    transition: background 0.12s ease, color 0.12s ease;
+}
+
+.tk-nav a:hover,
+.tk-nav .tk-nav-btn:hover {
+    background: rgba(196, 162, 101, 0.07);
+    color: var(--color-text-primary);
+}
+
+.tk-nav a.active {
+    background: rgba(196, 162, 101, 0.14);
+    border-left-color: var(--color-accent);
+    color: var(--color-accent);
+}
+
+.tk-nav .mud-icon-root { font-size: 19px; }
+.tk-nav-sep { border-bottom: 1px solid var(--color-border); margin: 8px 16px; }
+.tk-nav form { display: contents; }
+
+/* --- Ilustração decorativa: skull realista com flores (images/skull_sidebar.png) --- */
+.sidebar-skull-wrapper {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    pointer-events: none;
+    overflow: hidden;
+}
+
+.sidebar-skull-img {
+    width: 100%;
+    max-width: 220px;
+    display: block;
+    margin: 0 auto;
+    opacity: 0.22;
+    filter: sepia(0.3) hue-rotate(25deg) brightness(0.9);
+    /* Aplica tom dourado sutil mantendo o estilo blackwork da arte original */
+}
+
+/* --- Topbar --- */
+.tk-topbar {
+    position: sticky;
+    top: 0;
+    height: 64px;
+    min-height: 64px;
+    background: var(--color-bg);
+    border-bottom: 1px solid var(--color-border);
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 0 24px;
+    z-index: 1100;
+}
+
+.tk-burger {
+    background: none;
+    border: none;
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    padding: 8px;
+    border-radius: 6px;
+    line-height: 0;
+}
+.tk-burger:hover { background: var(--color-accent-dim); color: var(--color-accent); }
+
+.tk-welcome-1 { font-size: 16px; color: var(--color-text-primary); line-height: 1.3; }
+.tk-welcome-2 { font-size: 13px; color: var(--color-text-secondary); line-height: 1.3; }
+
+.tk-user {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    text-decoration: none;
+    padding: 6px 8px;
+    border-radius: 8px;
+}
+.tk-user:hover { background: var(--color-accent-dim); }
+
+.tk-avatar {
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    border: 1.5px solid var(--color-accent);
+    background: var(--color-surface-alt);
+    color: var(--color-accent);
+    font-family: var(--font-display);
+    font-size: 14px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    letter-spacing: 1px;
+}
+
+.tk-user-name { font-size: 14px; color: var(--color-text-primary); line-height: 1.25; }
+.tk-user-role { font-size: 11px; color: var(--color-text-secondary); line-height: 1.25; }
+.tk-user .mud-icon-root { color: var(--color-text-secondary); font-size: 18px; }
+
+@media (max-width: 640px) {
+    .tk-welcome-2, .tk-user-info { display: none; }
+}
+
+/* --- Conteúdo + rodapé decorativo --- */
+.tk-content { flex: 1; padding: 32px; }
+@media (max-width: 640px) { .tk-content { padding: 20px 16px; } }
+
+.tk-footer { margin-top: 48px; text-align: center; }
+.tk-footer-line { border-top: 1px solid var(--color-border); margin-bottom: 18px; }
+.tk-footer-needle { line-height: 0; margin-bottom: 10px; }
+.tk-footer-needle svg { opacity: 0.5; }
+.tk-footer-text {
+    font-family: var(--font-deco);
+    font-size: 10px;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    color: var(--color-text-muted);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    flex-wrap: wrap;
+}
+.tk-footer-text .tk-diamond { color: var(--color-accent); opacity: 0.6; font-size: 8px; }
+
+/* Login e demais telas anônimas: sem shell, conteúdo centralizado */
+.tk-anon {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 24px;
+}
+
+/* ============================================================================
+   Títulos de página e cabeçalhos
+   ============================================================================ */
+.page-title {
+    font-family: var(--font-display) !important;
+    color: var(--color-text-primary);
+}
+
+.page-title::after {
+    content: "";
+    display: block;
+    width: 48px;
+    height: 2px;
+    margin-top: 8px;
+    background: var(--color-accent);
+    opacity: 0.65;
+}
+
+/* ============================================================================
+   Dashboard
+   ============================================================================ */
+.tk-hero {
+    position: relative;
+    background: linear-gradient(180deg, var(--color-surface) 0%, #151513 100%);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    padding: 32px;
+    margin-bottom: 24px;
+    overflow: hidden;
+}
+
+.tk-hero-title {
+    font-family: var(--font-display);
+    font-size: 30px;
+    font-weight: 600;
+    color: var(--color-text-primary);
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.tk-hero-title .tk-accent { color: var(--color-accent); }
+.tk-hero-title .mud-icon-root { color: var(--color-accent); }
+.tk-hero-sub { color: var(--color-text-secondary); font-size: 14px; margin-top: 8px; position: relative; }
+
+/* Skull como textura de fundo do hero — opacity baixa + filtro dourado */
+.hero-bg-skull {
+    position: absolute;
+    right: -20px;
+    top: -10px;
+    width: 340px;
+    height: 340px;
+    background-image: url('/images/skull_sidebar.png');
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: right center;
+    opacity: 0.07;
+    filter: sepia(0.5) hue-rotate(20deg);
+    pointer-events: none;
+}
+
+/* 2 cards (Clientes + Vendas) em colunas iguais — linha única, valor à direita
+   (TIKAUM_SPEC.md §13, Revisão 3: acaba com a área vazia sob o número) */
+.tk-metrics {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 24px;
+}
+@media (max-width: 560px)  { .tk-metrics { grid-template-columns: 1fr; } }
+
+.tk-metric-card {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    padding: 16px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.tk-metric-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.tk-metric-text { display: flex; flex-direction: column; gap: 2px; }
+.tk-metric-icon {
+    flex-shrink: 0;
+    width: 46px;
+    height: 46px;
+    border-radius: 8px;
+    background: var(--color-surface-alt);
+    border: 1px solid var(--color-border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.tk-metric-icon .mud-icon-root { color: var(--color-accent); font-size: 28px; }
+
+.tk-metric-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--color-text-secondary);
+}
+
+.tk-metric-value {
+    font-family: var(--font-display);
+    font-size: 40px;
+    font-weight: 600;
+    color: var(--color-text-primary);
+    line-height: 1.1;
+    text-align: right;
+    flex-shrink: 0;
+}
+
+.tk-metric-link {
+    font-size: 12px;
+    color: var(--color-accent);
+    text-decoration: none;
+}
+.tk-metric-link:hover { filter: brightness(1.15); }
+
+/* Vendas do Dia + Vendas do Mês em colunas iguais */
+.tk-dash-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    align-items: start;
+}
+@media (max-width: 1000px) { .tk-dash-grid { grid-template-columns: 1fr; } }
+
+.tk-panel {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    padding: 24px;
+}
+
+.tk-panel-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 16px;
+}
+.tk-panel-head .mud-icon-root { color: var(--color-accent); font-size: 20px; }
+.tk-panel-title {
+    font-family: var(--font-display);
+    font-size: 17px;
+    font-weight: 600;
+    color: var(--color-text-primary);
+    flex: 1;
+}
+
+/* Corpo dos painéis de vendas: no máx. 8 linhas visíveis, scroll interno se exceder */
+.tk-panel-scroll { max-height: 420px; overflow-y: auto; overflow-x: auto; }
+
+/* Rodapé com totalizadores (JetBrains Mono, dourado) */
+.tk-panel-foot {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 6px 18px;
+    border-top: 1px solid var(--color-border);
+    margin-top: 12px;
+    padding-top: 12px;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    color: var(--color-accent);
+}
+
+/* Tabela simples do dashboard (vendas do dia/mês) */
+.tk-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.tk-table th {
+    text-align: left;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    font-weight: 500;
+    color: var(--color-text-secondary);
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--color-border);
+}
+.tk-table td {
+    padding: 10px;
+    border-bottom: 1px solid var(--color-border);
+    color: var(--color-text-primary);
+}
+.tk-table tr:last-child td { border-bottom: none; }
+.tk-table .tk-right { text-align: right; }
+
+/* ============================================================================
+   BackupBanner — alertas de backup entre topbar e conteúdo (TIKAUM_SPEC.md §6)
+   No fluxo do documento (empurra o conteúdo, nunca sobrepõe); sticky logo
+   abaixo do topbar de 64px.
+   ============================================================================ */
+.backup-banner-area {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    position: sticky;
+    top: 64px; /* altura do topbar */
+    z-index: 100;
+}
+
+.backup-alert {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 24px;
+    font-size: 13px;
+    color: var(--color-text-primary);
+    border-bottom: 1px solid var(--color-border);
+}
+
+.backup-alert--danger {
+    background: rgba(61, 30, 30, 0.97);
+    border-left: 3px solid #BF5D5D;
+}
+
+.backup-alert--warning {
+    background: rgba(61, 48, 10, 0.97);
+    border-left: 3px solid #D4A017;
+}
+
+.backup-alert__icon.mud-icon-root { font-size: 18px; flex-shrink: 0; }
+.backup-alert--danger  .backup-alert__icon.mud-icon-root { color: var(--color-danger-text); }
+.backup-alert--warning .backup-alert__icon.mud-icon-root { color: var(--color-warning-text); }
+
+.backup-alert__text {
+    flex: 1;
+    color: var(--color-text-secondary);
+}
+
+.backup-alert__link {
+    color: var(--color-accent);
+    text-decoration: underline;
+    cursor: pointer;
+    white-space: nowrap;
+    font-size: 12px;
+}
+
+.backup-alert__close {
+    cursor: pointer;
+    color: var(--color-text-muted);
+    padding: 4px;
+    border-radius: 4px;
+    line-height: 1;
+}
+.backup-alert__close:hover {
+    color: var(--color-text-primary);
+    background: rgba(255, 255, 255, 0.05);
+}
+
+/* ============================================================================
+   Badges e estados
+   ============================================================================ */
+.tk-badge {
+    display: inline-block;
+    padding: 2px 9px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+.tk-badge-success { background: var(--color-success-bg); color: var(--color-success-text); }
+.tk-badge-danger  { background: var(--color-danger-bg);  color: var(--color-danger-text); }
+.tk-badge-warning { background: var(--color-warning-bg); color: var(--color-warning-text); }
+.tk-badge-accent  { background: rgba(196, 162, 101, 0.15); color: var(--color-accent); }
+.tk-badge-muted   { background: var(--color-disabled-bg); color: var(--color-disabled-text); }
+
+/* Vendas — histórico de ajustes (TIKAUM_SPEC.md §5/§6) */
+.mud-table tr.tk-row-disabled,
+.mud-table tr.tk-row-disabled > td { background: rgba(212, 160, 23, 0.08) !important; }
+.mud-table tr.tk-row-disabled > td { opacity: 0.7; }
+
+.mud-table tr.tk-row-deleted,
+.mud-table tr.tk-row-deleted > td { background: rgba(191, 93, 93, 0.08) !important; }
+.mud-table tr.tk-row-deleted > td { opacity: 0.6; }
+.tk-strike { text-decoration: line-through; }
+
+/* Valores monetários e datas */
+.tk-mono { font-family: var(--font-mono); font-size: 0.92em; }
+
+/* Estado vazio */
+.tk-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    padding: 44px 16px;
+    color: var(--color-text-secondary);
+    text-align: center;
+}
+.tk-empty .mud-icon-root { font-size: 44px; color: var(--color-text-muted); }
+
+/* ============================================================================
+   MudBlazor — skin (paleta vem do MudTheme em MainLayout; aqui só o acabamento)
+   ============================================================================ */
+
+/* Superfícies com borda dourada sutil e sem sombra pesada */
+.mud-paper:not(.mud-menu-list):not(.mud-popover) {
+    border: 1px solid var(--color-border);
+    box-shadow: none !important;
+}
+
+.mud-popover, .mud-menu-list, .mud-picker-container {
+    border: 1px solid var(--color-border);
+}
+
+/* Tipografia de títulos em Cinzel */
+.mud-typography-h4, .mud-typography-h5, .mud-typography-h6 {
+    font-family: var(--font-display) !important;
+}
+
+/* Tabelas */
+.mud-table-head .mud-table-cell {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    font-weight: 500;
+    color: var(--color-text-secondary) !important;
+}
+
+/* Botão primário: dourado com texto escuro, hover brilha */
+.mud-button-filled-primary:hover { filter: brightness(1.1); }
+
+/* Inputs: foco com borda dourada + glow */
+.mud-input.mud-input-outlined:focus-within .mud-input-outlined-border {
+    border-color: var(--color-accent) !important;
+    box-shadow: 0 0 0 2px rgba(196, 162, 101, 0.2);
+}
+.mud-input-label { color: var(--color-text-secondary); }
+input::placeholder, textarea::placeholder { color: var(--color-text-muted) !important; opacity: 1; }
+
+/* Diálogos */
+.mud-dialog {
+    border: 1px solid var(--color-border);
+    border-radius: 12px !important;
+    background: var(--color-surface);
+}
+.mud-dialog .mud-dialog-title {
+    font-family: var(--font-display);
+    font-size: 18px;
+}
+.mud-overlay-scrim.mud-overlay-dark { background-color: rgba(0, 0, 0, 0.7) !important; }
+
+/* Toasts: surface-alt com borda esquerda semântica, sem cor de fundo clara */
+.mud-snackbar {
+    background-color: var(--color-surface-alt) !important;
+    color: var(--color-text-primary) !important;
+    border-left: 3px solid var(--color-accent);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+}
+.mud-snackbar .mud-snackbar-icon .mud-icon-root,
+.mud-snackbar .mud-snackbar-content-message { color: var(--color-text-primary) !important; }
+.mud-snackbar.mud-alert-filled-success { border-left-color: var(--color-success-text); }
+.mud-snackbar.mud-alert-filled-success .mud-snackbar-icon .mud-icon-root { color: var(--color-success-text) !important; }
+.mud-snackbar.mud-alert-filled-error { border-left-color: var(--color-danger-text); }
+.mud-snackbar.mud-alert-filled-error .mud-snackbar-icon .mud-icon-root { color: var(--color-danger-text) !important; }
+.mud-snackbar.mud-alert-filled-warning { border-left-color: var(--color-warning-text); }
+.mud-snackbar.mud-alert-filled-warning .mud-snackbar-icon .mud-icon-root { color: var(--color-warning-text) !important; }
+.mud-snackbar.mud-alert-filled-info { border-left-color: var(--color-accent); }
+
+/* Chips (atalhos de período etc.) */
+.mud-chip.mud-chip-color-default {
+    background: var(--color-surface-alt);
+    color: var(--color-text-secondary);
+    border: 1px solid var(--color-border);
+}
+.mud-chip.mud-chip-color-default:hover {
+    color: var(--color-accent);
+    border-color: var(--color-accent);
+}
+
+/* ============================================================================
+   Login (renderizado estaticamente — inputs nativos, ver Login.razor)
+   ============================================================================ */
+.login-field label {
+    display: block;
+    font-size: 0.75rem;
+    color: var(--color-text-secondary);
+    margin-bottom: 4px;
+}
+
+.login-input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 10px 12px;
+    background: var(--color-surface-alt);
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    color: var(--color-text-primary);
+    font-size: 1rem;
+    font-family: var(--font-body);
+}
+
+.login-input:focus {
+    outline: none;
+    border-color: var(--color-accent);
+    box-shadow: 0 0 0 2px rgba(196, 162, 101, 0.2);
+}
+
+.login-card {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 12px;
+    padding: 32px 28px;
+    max-width: 380px;
+    margin: 0 auto;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.login-title {
+    font-family: var(--font-display);
+    font-size: 24px;
+    font-weight: 700;
+    letter-spacing: 4px;
+    color: var(--color-accent);
+    text-align: center;
+    margin: 10px 0 0;
+}
+
+.login-sub {
+    font-size: 9px;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    color: var(--color-text-muted);
+    text-align: center;
+    margin-top: 5px;
+}
+
+.login-tagline {
+    font-family: var(--font-deco);
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--color-accent);
+    text-align: center;
+    margin: 12px 0 22px;
+}
+
+/* ============================================================================
+   Impressão: oculta shell e controles, maximiza área do conteúdo
+   ============================================================================ */
+@media print {
+    .tk-sidebar,
+    .tk-sidebar-overlay,
+    .tk-topbar,
+    .tk-footer,
+    .backup-banner-area,
+    .mud-snackbar-location,
+    .no-print {
+        display: none !important;
+    }
+
+    .tk-main-col { margin-left: 0 !important; }
+    .tk-content { padding: 0 !important; }
+
+    html, body { background: #fff; color: #000; }
+}

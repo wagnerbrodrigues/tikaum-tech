@@ -1,0 +1,11 @@
+@rendermode InteractiveServer
+
+@* Com interatividade "Por página", o MainLayout ao redor da página continua
+   estático — e estes provedores do MudBlazor precisam de circuito interativo
+   para exibir diálogo/popover/snackbar. Isolá-los aqui (componente sem
+   parâmetros) permite declarar o próprio rendermode sem o conflito
+   "Cannot pass the parameter 'Body'..." que ocorre ao pôr rendermode no
+   MainLayout inteiro. *@
+<MudPopoverProvider />
+<MudDialogProvider />
+<MudSnackbarProvider />

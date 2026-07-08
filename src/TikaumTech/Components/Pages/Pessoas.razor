@@ -1,0 +1,122 @@
+@page "/pessoas"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@inject PessoaService PessoaService
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<PageTitle>Clientes — Tikaum-Tech</PageTitle>
+
+<MudText Typo="Typo.h5" GutterBottom="true" Class="page-title">Clientes</MudText>
+
+<MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-3" Spacing="2">
+    <MudTextField T="string" @bind-Value="_busca" @bind-Value:after="BuscarAsync"
+                  Placeholder="Buscar por nome, celular ou CPF..."
+                  Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                  Variant="Variant.Outlined" Clearable="true" FullWidth="true" Immediate="true" />
+    <MudButton Variant="Variant.Filled" Color="Color.Primary"
+               StartIcon="@Icons.Material.Filled.PersonAdd"
+               OnClick="AbrirDialogNovaPessoa">
+        Novo Cliente
+    </MudButton>
+</MudStack>
+
+<MudTable T="Pessoa" Items="_pessoas" Dense="true" Hover="true"
+          Loading="_carregando" Elevation="1" Striped="true">
+    <HeaderContent>
+        <MudTh>Nome</MudTh>
+        <MudTh>Celular</MudTh>
+        <MudTh>CPF</MudTh>
+        <MudTh>Nascimento</MudTh>
+        <MudTh>Cliente desde</MudTh>
+        <MudTh Style="width:100px">Ações</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd>
+            <MudLink Href="@($"/pessoas/{context.Id}")">@context.Nome</MudLink>
+        </MudTd>
+        <MudTd>@(context.Telefone ?? "—")</MudTd>
+        <MudTd Class="tk-mono">@(context.Cpf ?? "—")</MudTd>
+        <MudTd>@(context.DataNascimento?.ToString("dd/MM/yyyy") ?? "—")</MudTd>
+        <MudTd>@context.CriadoEm.ToString("dd/MM/yyyy")</MudTd>
+        <MudTd>
+            <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                           title="Editar"
+                           OnClick="@(() => AbrirDialogEditarAsync(context))" />
+            <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small"
+                           Color="Color.Error" title="Excluir"
+                           OnClick="@(() => ConfirmarExclusaoAsync(context))" />
+        </MudTd>
+    </RowTemplate>
+    <NoRecordsContent>
+        <div class="tk-empty">
+            <MudIcon Icon="@Icons.Material.Outlined.Person" />
+            <span>@(string.IsNullOrWhiteSpace(_busca) ? "Nenhum cliente cadastrado ainda." : "Nenhum cliente encontrado.")</span>
+        </div>
+    </NoRecordsContent>
+    <PagerContent>
+        <MudTablePager PageSizeOptions="new[] { 25, 50, 100 }" RowsPerPageString="Linhas por página:" />
+    </PagerContent>
+</MudTable>
+
+@code {
+    // Acesso rápido do dashboard: /pessoas?novo=1 abre direto o diálogo de cadastro
+    [SupplyParameterFromQuery(Name = "novo")] public int? Novo { get; set; }
+
+    private string _busca = "";
+    private bool _carregando;
+    private List<Pessoa> _pessoas = [];
+
+    protected override async Task OnInitializedAsync() => await BuscarAsync();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && Novo == 1)
+            await AbrirDialogNovaPessoa();
+    }
+
+    private async Task BuscarAsync()
+    {
+        _carregando = true;
+        _pessoas = await PessoaService.ListarAsync(_busca);
+        _carregando = false;
+    }
+
+    private async Task AbrirDialogNovaPessoa()
+    {
+        var dialog = await DialogService.ShowAsync<PessoaDialog>("Novo Cliente");
+        if (!(await dialog.Result)!.Canceled)
+            await BuscarAsync();
+    }
+
+    private async Task AbrirDialogEditarAsync(Pessoa pessoa)
+    {
+        var parameters = new DialogParameters<PessoaDialog> { { x => x.Pessoa, pessoa } };
+        var dialog = await DialogService.ShowAsync<PessoaDialog>("Editar Cliente", parameters);
+        if (!(await dialog.Result)!.Canceled)
+            await BuscarAsync();
+    }
+
+    private async Task ConfirmarExclusaoAsync(Pessoa pessoa)
+    {
+        var parameters = new DialogParameters<ConfirmDialog>
+        {
+            { x => x.Message, $"Excluir {pessoa.Nome}? Esta ação não pode ser desfeita." },
+            { x => x.ConfirmText, "Excluir" },
+        };
+        var dialog = await DialogService.ShowAsync<ConfirmDialog>("Confirmar exclusão", parameters);
+        if (!(await dialog.Result)!.Canceled)
+        {
+            try
+            {
+                await PessoaService.DeletarAsync(pessoa.Id);
+                Snackbar.Add($"{pessoa.Nome} excluído(a).", Severity.Success);
+                await BuscarAsync();
+            }
+            catch (InvalidOperationException ex)
+            {
+                Snackbar.Add(ex.Message, Severity.Warning);
+            }
+        }
+    }
+}

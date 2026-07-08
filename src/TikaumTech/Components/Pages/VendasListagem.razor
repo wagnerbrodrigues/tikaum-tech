@@ -1,0 +1,262 @@
+@page "/vendas"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@inject VendaService VendaService
+@inject PessoaService PessoaService
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<PageTitle>Vendas — Tikaum-Tech</PageTitle>
+
+<MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4" Spacing="2">
+    <MudText Typo="Typo.h5" Class="page-title">Vendas</MudText>
+    <MudSpacer />
+    <MudButton Variant="Variant.Filled" Color="Color.Primary"
+               StartIcon="@Icons.Material.Filled.Add"
+               Href="/vendas/nova">
+        Nova Venda
+    </MudButton>
+</MudStack>
+
+<!-- Filtros -->
+<MudPaper Class="pa-4 mb-3" Elevation="1">
+    <MudGrid>
+        <MudItem xs="6" md="3">
+            <MudDatePicker @bind-Date="_inicio" Label="De" DateFormat="dd/MM/yyyy" Editable="true" Placeholder="dd/mm/aaaa" />
+        </MudItem>
+        <MudItem xs="6" md="3">
+            <MudDatePicker @bind-Date="_fim" Label="Até" DateFormat="dd/MM/yyyy" Editable="true" Placeholder="dd/mm/aaaa" />
+        </MudItem>
+        <MudItem xs="12" md="4">
+            <MudAutocomplete T="Pessoa"
+                             Label="Cliente (opcional)"
+                             SearchFunc="SearchPessoaAsync"
+                             @bind-Value="_pessoaSelecionada"
+                             ToStringFunc="@(p => p?.Nome ?? "")"
+                             ResetValueOnEmptyText="true"
+                             CoerceText="false"
+                             Clearable="true"
+                             FullWidth="true">
+                <ItemTemplate Context="p">
+                    @p.Nome
+                    @if (p.Identificacao.Length > 0)
+                    {
+                        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block tk-mono">
+                            @p.Identificacao
+                        </MudText>
+                    }
+                </ItemTemplate>
+            </MudAutocomplete>
+        </MudItem>
+        <MudItem xs="12" md="2" Class="d-flex align-end">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Search"
+                       OnClick="BuscarAsync" FullWidth="true"
+                       Disabled="_carregando">
+                Buscar
+            </MudButton>
+        </MudItem>
+    </MudGrid>
+
+    <!-- Atalhos de período + histórico -->
+    <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center" Class="mt-3" Wrap="Wrap.Wrap">
+        <MudChip T="string" Size="Size.Small" OnClick="@(() => DefinirPeriodo(0))">Hoje</MudChip>
+        <MudChip T="string" Size="Size.Small" OnClick="@(() => DefinirPeriodo(7))">7 dias</MudChip>
+        <MudChip T="string" Size="Size.Small" OnClick="@(() => DefinirPeriodo(30))">30 dias</MudChip>
+        <MudChip T="string" Size="Size.Small" OnClick="DefinirMesAtual">Mês atual</MudChip>
+        <MudSpacer />
+        <MudSwitch T="bool" @bind-Value="_mostrarHistorico" @bind-Value:after="BuscarAsync"
+                   Label="Mostrar histórico de ajustes" Color="Color.Primary" />
+    </MudStack>
+</MudPaper>
+
+<!-- Resultados -->
+<MudTable T="Venda" Items="_vendas" Dense="true" Hover="true"
+          Loading="_carregando" Elevation="1"
+          RowClassFunc="RowClass">
+    <HeaderContent>
+        <MudTh>Data</MudTh>
+        <MudTh>Cliente</MudTh>
+        <MudTh>Usuário</MudTh>
+        <MudTh>Itens</MudTh>
+        <MudTh Style="text-align:right">Valor</MudTh>
+        <MudTh Style="text-align:center">Status</MudTh>
+        @if (_mostrarHistorico)
+        {
+            <MudTh>Ajuste</MudTh>
+        }
+        <MudTh Style="width:120px">Ações</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd Class="tk-mono">@context.DataHora.ToString("dd/MM/yyyy")</MudTd>
+        <MudTd>
+            @if (context.Pessoa is not null)
+            {
+                <MudLink Href="@($"/pessoas/{context.PessoaId}")">@context.Pessoa.Nome</MudLink>
+            }
+            else
+            {
+                <MudText Color="Color.Secondary" Typo="Typo.body2">Avulsa</MudText>
+            }
+        </MudTd>
+        <MudTd>@(context.Usuario ?? "—")</MudTd>
+        <MudTd>@DescricaoItens(context)</MudTd>
+        <MudTd Class="@($"tk-mono{(context.Status == VendaStatus.Deleted ? " tk-strike" : "")}")"
+               Style="text-align:right">
+            @context.ValorTotal.ToString("C", _ptBR)
+        </MudTd>
+        <MudTd Style="text-align:center"><VendaBadge Venda="context" /></MudTd>
+        @if (_mostrarHistorico)
+        {
+            <MudTd>
+                @if (context.Status == VendaStatus.Disabled && context.SubstituidaPor is not null)
+                {
+                    <MudText Typo="Typo.body2">
+                        Substituído por
+                        <MudLink OnClick="@(() => VisualizarAsync(context.SubstituidaPor!.Id))">#@context.SubstituidaPor.Id</MudLink>
+                    </MudText>
+                }
+                else if (context.OriginId is not null)
+                {
+                    <MudText Typo="Typo.body2">
+                        Origem
+                        <MudLink OnClick="@(() => VisualizarAsync(context.OriginId!.Value))">#@context.OriginId</MudLink>
+                    </MudText>
+                }
+                else
+                {
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">—</MudText>
+                }
+            </MudTd>
+        }
+        <MudTd>
+            <MudIconButton Icon="@Icons.Material.Filled.Visibility" Size="Size.Small"
+                           title="Visualizar"
+                           OnClick="@(() => VisualizarAsync(context.Id))" />
+            @if (context.Status == VendaStatus.Active)
+            {
+                <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                               title="Editar"
+                               OnClick="@(() => EditarAsync(context))" />
+                <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small"
+                               Color="Color.Error" title="Excluir"
+                               OnClick="@(() => ConfirmarExclusaoAsync(context))" />
+            }
+        </MudTd>
+    </RowTemplate>
+    <FooterContent>
+        @if (_vendas.Count > 0)
+        {
+            <MudTd colspan="@(_mostrarHistorico ? 6 : 5)" Style="text-align:right;font-weight:bold">
+                @VendasAtivas.Count() venda(s) ativa(s) — Total
+            </MudTd>
+            <MudTd Class="tk-mono" Style="text-align:right;font-weight:bold">
+                @VendasAtivas.Sum(v => v.ValorTotal).ToString("C", _ptBR)
+            </MudTd>
+            <MudTd></MudTd>
+        }
+    </FooterContent>
+    <NoRecordsContent>
+        <div class="tk-empty">
+            <MudIcon Icon="@Icons.Material.Outlined.ShoppingBag" />
+            <span>Nenhuma venda no período.</span>
+        </div>
+    </NoRecordsContent>
+    <PagerContent>
+        <MudTablePager PageSizeOptions="new[] { 25, 50, 100 }" RowsPerPageString="Linhas por página:" />
+    </PagerContent>
+</MudTable>
+
+@code {
+    private static readonly System.Globalization.CultureInfo _ptBR = new("pt-BR");
+
+    private DateTime? _inicio = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
+    private DateTime? _fim = DateTime.Today;
+    private Pessoa? _pessoaSelecionada;
+    private List<Venda> _vendas = [];
+    private bool _carregando;
+    private bool _mostrarHistorico;
+
+    // Totais nunca incluem disabled/deleted, mesmo com o histórico visível (spec §5)
+    private IEnumerable<Venda> VendasAtivas => _vendas.Where(v => v.Status == VendaStatus.Active);
+
+    protected override async Task OnInitializedAsync() => await BuscarAsync();
+
+    private async Task<IEnumerable<Pessoa>> SearchPessoaAsync(string value, CancellationToken ct) =>
+        await PessoaService.ListarAsync(value);
+
+    private async Task DefinirPeriodo(int dias)
+    {
+        _fim = DateTime.Today;
+        _inicio = dias == 0 ? DateTime.Today : DateTime.Today.AddDays(-dias);
+        await BuscarAsync();
+    }
+
+    private async Task DefinirMesAtual()
+    {
+        _inicio = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
+        _fim = DateTime.Today;
+        await BuscarAsync();
+    }
+
+    private async Task BuscarAsync()
+    {
+        _carregando = true;
+        _vendas = await VendaService.ListarAsync(_inicio, _fim, _pessoaSelecionada?.Id,
+            incluirHistorico: _mostrarHistorico);
+        _carregando = false;
+    }
+
+    private string RowClass(Venda venda, int _) => venda.Status switch
+    {
+        VendaStatus.Disabled => "tk-row-disabled",
+        VendaStatus.Deleted => "tk-row-deleted",
+        _ => "",
+    };
+
+    private async Task VisualizarAsync(int vendaId)
+    {
+        var parameters = new DialogParameters<VendaViewDialog> { { x => x.VendaId, vendaId } };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true };
+        await DialogService.ShowAsync<VendaViewDialog>($"Venda #{vendaId}", parameters, options);
+    }
+
+    private async Task EditarAsync(Venda venda)
+    {
+        var parameters = new DialogParameters<VendaEditDialog> { { x => x.Venda, venda } };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true };
+        var dialog = await DialogService.ShowAsync<VendaEditDialog>("Editar Venda", parameters, options);
+        if (!(await dialog.Result)!.Canceled)
+            await BuscarAsync();
+    }
+
+    private async Task ConfirmarExclusaoAsync(Venda venda)
+    {
+        var parameters = new DialogParameters<ConfirmDialog>
+        {
+            { x => x.Message, "Tem certeza que deseja excluir esta venda? Esta ação não pode ser desfeita." },
+            { x => x.ConfirmText, "Excluir" },
+        };
+        var dialog = await DialogService.ShowAsync<ConfirmDialog>("Confirmar exclusão", parameters);
+        if (!(await dialog.Result)!.Canceled)
+        {
+            try
+            {
+                await VendaService.ExcluirAsync(venda.Id);
+                Snackbar.Add("Venda excluída.", Severity.Success);
+                await BuscarAsync();
+            }
+            catch (InvalidOperationException ex)
+            {
+                Snackbar.Add(ex.Message, Severity.Warning);
+            }
+        }
+    }
+
+    private static string DescricaoItens(Venda venda)
+    {
+        var nomes = venda.Itens.Select(i =>
+            i.Produto?.Nome ?? i.Servico?.Nome ?? i.DescricaoLivre ?? "Item");
+        return string.Join(", ", nomes);
+    }
+}

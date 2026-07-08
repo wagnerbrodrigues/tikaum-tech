@@ -1,0 +1,326 @@
+@* Edição de venda com rastreabilidade (TIKAUM_SPEC.md §5/§6): confirmar NÃO altera o
+   registro — desabilita o original e cria um substituto com origin_id. Permite trocar
+   o cliente, data, observação e itens (mesmo padrão do formulário de nova venda). *@
+@inject PessoaService PessoaService
+@inject ProdutoService ProdutoService
+@inject ServicoService ServicoService
+@inject VendaService VendaService
+@inject UsuarioService UsuarioService
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <MudGrid Spacing="2">
+            <MudItem xs="12" md="4">
+                @if (!_vendaAvulsa)
+                {
+                    <MudAutocomplete T="Pessoa"
+                                     Label="Cliente"
+                                     SearchFunc="SearchPessoaAsync"
+                                     @bind-Value="_pessoaSelecionada"
+                                     ToStringFunc="@(p => p?.Nome ?? "")"
+                                     ResetValueOnEmptyText="true"
+                                     CoerceText="false"
+                                     FullWidth="true">
+                        <ItemTemplate Context="p">
+                            @p.Nome
+                            @if (p.Identificacao.Length > 0)
+                            {
+                                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block tk-mono">
+                                    @p.Identificacao
+                                </MudText>
+                            }
+                        </ItemTemplate>
+                    </MudAutocomplete>
+                }
+                else
+                {
+                    <MudText Color="Color.Secondary" Class="mt-4">Venda avulsa (sem cadastro de cliente)</MudText>
+                }
+            </MudItem>
+            <MudItem xs="6" md="2">
+                <MudSwitch T="bool" @bind-Value="_vendaAvulsa" Label="Avulsa" Color="Color.Primary" />
+            </MudItem>
+            <MudItem xs="6" md="2">
+                <MudSelect T="string" @bind-Value="_usuarioVenda" Label="Usuário">
+                    @foreach (var usuario in _usuarios)
+                    {
+                        <MudSelectItem T="string" Value="@usuario">@usuario</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" md="4">
+                @* Editable sem DateMask: digitável, igual à tela de nova venda (o combo
+                   Editable+Mask perde a posição do caret — ver Vendas.razor) *@
+                <MudDatePicker @bind-Date="_data" Label="Data" DateFormat="dd/MM/yyyy"
+                               Editable="true" Placeholder="dd/mm/aaaa" />
+            </MudItem>
+        </MudGrid>
+        <MudTextField @bind-Value="_observacao" Label="Observação (opcional)" Lines="2" MaxLength="500" Class="mt-2 mb-3" />
+
+        <MudText Typo="Typo.subtitle2" Class="mb-1">Adicionar item</MudText>
+        <MudTabs Elevation="0" Rounded="true" ApplyEffectsToContainer="true">
+            @* Serviço vem antes de Produto — mesma ordem da tela de nova venda (pedido de 2026-07-08) *@
+            <MudTabPanel Text="Serviço">
+                <MudStack Row="true" AlignItems="AlignItems.End" Spacing="2" Class="mt-2">
+                    <MudAutocomplete T="Servico"
+                                     Label="Buscar serviço..."
+                                     SearchFunc="SearchServicoAsync"
+                                     @bind-Value="_servicoSelecionado"
+                                     ToStringFunc="@(s => s?.Nome ?? "")"
+                                     ResetValueOnEmptyText="true"
+                                     CoerceText="false"
+                                     Style="flex:1" />
+                    <MudButton Variant="Variant.Outlined" Color="Color.Primary"
+                               StartIcon="@Icons.Material.Filled.AddShoppingCart"
+                               Disabled="_servicoSelecionado is null"
+                               OnClick="AdicionarServico">Adicionar</MudButton>
+                </MudStack>
+            </MudTabPanel>
+            <MudTabPanel Text="Produto">
+                <MudStack Row="true" AlignItems="AlignItems.End" Spacing="2" Class="mt-2">
+                    <MudAutocomplete T="Produto"
+                                     Label="Buscar produto..."
+                                     SearchFunc="SearchProdutoAsync"
+                                     @bind-Value="_produtoSelecionado"
+                                     ToStringFunc="@(p => p?.Nome ?? "")"
+                                     ResetValueOnEmptyText="true"
+                                     CoerceText="false"
+                                     Style="flex:1" />
+                    <MudButton Variant="Variant.Outlined" Color="Color.Primary"
+                               StartIcon="@Icons.Material.Filled.AddShoppingCart"
+                               Disabled="_produtoSelecionado is null"
+                               OnClick="AdicionarProduto">Adicionar</MudButton>
+                </MudStack>
+            </MudTabPanel>
+            <MudTabPanel Text="Item Livre">
+                <MudGrid Class="mt-1">
+                    <MudItem xs="12" md="6">
+                        <MudTextField @bind-Value="_descricaoLivre" Label="Descrição do item" MaxLength="200" FullWidth="true" />
+                    </MudItem>
+                    <MudItem xs="6" md="3">
+                        <MudNumericField T="decimal" @bind-Value="_precoLivre" Label="Preço (R$)"
+                                         Min="0" Format="F2" FullWidth="true" />
+                    </MudItem>
+                    <MudItem xs="6" md="3" Class="d-flex align-end">
+                        <MudButton Variant="Variant.Outlined" Color="Color.Primary"
+                                   StartIcon="@Icons.Material.Filled.AddShoppingCart"
+                                   Disabled="@string.IsNullOrWhiteSpace(_descricaoLivre)"
+                                   OnClick="AdicionarItemLivre" FullWidth="true">Adicionar</MudButton>
+                    </MudItem>
+                </MudGrid>
+            </MudTabPanel>
+        </MudTabs>
+
+        <MudSimpleTable Dense="true" Class="mt-3" Style="overflow-x:auto">
+            <thead>
+                <tr>
+                    <th>Item</th>
+                    <th style="width:110px;text-align:center">Qtd</th>
+                    <th style="width:130px;text-align:right">Preço unit. (R$)</th>
+                    <th style="width:100px;text-align:right">Total (R$)</th>
+                    <th style="width:40px"></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var item in _carrinho)
+                {
+                    <tr @key="item.Key">
+                        <td>
+                            @item.Descricao
+                            @if (item.EhItemLivre)
+                            {
+                                <span class="tk-badge tk-badge-muted ml-1">livre</span>
+                            }
+                        </td>
+                        <td>
+                            <MudNumericField T="decimal"
+                                             Value="item.Quantidade"
+                                             ValueChanged="@(v => { item.Quantidade = v; StateHasChanged(); })"
+                                             Min="0.001m" Format="F3" HideSpinButtons="true"
+                                             Style="width:90px" />
+                        </td>
+                        <td style="text-align:right">
+                            <MudNumericField T="decimal"
+                                             Value="item.ValorUnitario"
+                                             ValueChanged="@(v => { item.ValorUnitario = v; StateHasChanged(); })"
+                                             Min="0" Format="F2" HideSpinButtons="true"
+                                             Style="width:110px" />
+                        </td>
+                        <td class="tk-mono" style="text-align:right;white-space:nowrap">
+                            @item.ValorTotal.ToString("F2")
+                        </td>
+                        <td>
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                           Size="Size.Small" Color="Color.Error"
+                                           OnClick="@(() => RemoverItem(item))" />
+                        </td>
+                    </tr>
+                }
+            </tbody>
+            <tfoot>
+                <tr style="font-weight:bold">
+                    <td colspan="3" style="text-align:right;padding-right:8px">TOTAL</td>
+                    <td class="tk-mono" style="text-align:right">R$ @TotalVenda.ToString("F2")</td>
+                    <td></td>
+                </tr>
+            </tfoot>
+        </MudSimpleTable>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => MudDialog.Cancel())">Cancelar</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   Disabled="@(_carrinho.Count == 0 || _salvando)"
+                   OnClick="SalvarAsync">
+            @if (_salvando)
+            {
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-1" />
+            }
+            Salvar
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] IMudDialogInstance MudDialog { get; set; } = null!;
+    [Parameter, EditorRequired] public Venda Venda { get; set; } = null!;
+
+    private class ItemCarrinho
+    {
+        public Guid Key { get; } = Guid.NewGuid();
+        public Produto? Produto { get; set; }
+        public Servico? Servico { get; set; }
+        public string? DescricaoLivre { get; set; }
+        public decimal Quantidade { get; set; } = 1;
+        public decimal ValorUnitario { get; set; }
+        public decimal ValorTotal => Math.Round(Quantidade * ValorUnitario, 2);
+        public bool EhItemLivre => Produto is null && Servico is null;
+        public string Descricao => Produto?.Nome ?? Servico?.Nome ?? DescricaoLivre ?? "";
+    }
+
+    private Pessoa? _pessoaSelecionada;
+    private bool _vendaAvulsa;
+    private DateTime? _data;
+    private string? _observacao;
+    private List<string> _usuarios = [];
+    private string? _usuarioVenda;
+    private bool _salvando;
+
+    private readonly List<ItemCarrinho> _carrinho = [];
+
+    private Produto? _produtoSelecionado;
+    private Servico? _servicoSelecionado;
+    private string _descricaoLivre = "";
+    private decimal _precoLivre;
+
+    private decimal TotalVenda => _carrinho.Sum(i => i.ValorTotal);
+
+    protected override async Task OnInitializedAsync()
+    {
+        _pessoaSelecionada = Venda.Pessoa;
+        _vendaAvulsa = Venda.PessoaId is null;
+        _data = Venda.DataHora.Date;
+        _observacao = Venda.Observacao;
+
+        _usuarios = [.. (await UsuarioService.ListarAsync())
+            .Select(u => u.UserName ?? "")
+            .Where(nome => nome.Length > 0)];
+        // Vendas antigas (sem usuário) caem no mesmo default da tela de nova venda
+        _usuarioVenda = !string.IsNullOrWhiteSpace(Venda.Usuario) && _usuarios.Contains(Venda.Usuario)
+            ? Venda.Usuario
+            : _usuarios.FirstOrDefault(u => !u.Equals("admin", StringComparison.OrdinalIgnoreCase))
+              ?? _usuarios.FirstOrDefault();
+
+        foreach (var item in Venda.Itens)
+        {
+            _carrinho.Add(new ItemCarrinho
+            {
+                Produto = item.Produto,
+                Servico = item.Servico,
+                DescricaoLivre = item.DescricaoLivre,
+                Quantidade = item.Quantidade,
+                ValorUnitario = item.ValorUnitario,
+            });
+        }
+    }
+
+    private async Task<IEnumerable<Pessoa>> SearchPessoaAsync(string value, CancellationToken ct) =>
+        await PessoaService.ListarAsync(value);
+
+    private async Task<IEnumerable<Produto>> SearchProdutoAsync(string value, CancellationToken ct) =>
+        await ProdutoService.ListarAsync(value, apenasAtivos: true);
+
+    private async Task<IEnumerable<Servico>> SearchServicoAsync(string value, CancellationToken ct) =>
+        await ServicoService.ListarAsync(value, apenasAtivos: true);
+
+    private void AdicionarProduto()
+    {
+        if (_produtoSelecionado is null) return;
+        _carrinho.Add(new ItemCarrinho
+        {
+            Produto = _produtoSelecionado,
+            ValorUnitario = _produtoSelecionado.PrecoPadrao
+        });
+        _produtoSelecionado = null;
+    }
+
+    private void AdicionarServico()
+    {
+        if (_servicoSelecionado is null) return;
+        _carrinho.Add(new ItemCarrinho
+        {
+            Servico = _servicoSelecionado,
+            ValorUnitario = _servicoSelecionado.PrecoPadrao
+        });
+        _servicoSelecionado = null;
+    }
+
+    private void AdicionarItemLivre()
+    {
+        if (string.IsNullOrWhiteSpace(_descricaoLivre)) return;
+        _carrinho.Add(new ItemCarrinho
+        {
+            DescricaoLivre = _descricaoLivre.Trim(),
+            ValorUnitario = _precoLivre
+        });
+        _descricaoLivre = "";
+        _precoLivre = 0;
+    }
+
+    private void RemoverItem(ItemCarrinho item) => _carrinho.Remove(item);
+
+    private async Task SalvarAsync()
+    {
+        if (_carrinho.Count == 0) return;
+        if (!_vendaAvulsa && _pessoaSelecionada is null)
+        {
+            Snackbar.Add("Selecione o cliente ou marque a venda como avulsa.", Severity.Warning);
+            return;
+        }
+        _salvando = true;
+        try
+        {
+            var dto = new NovaVendaDto(
+                PessoaId: _vendaAvulsa ? null : _pessoaSelecionada?.Id,
+                DataHora: (_data ?? Venda.DataHora).Date,
+                Observacao: _observacao,
+                Usuario: _usuarioVenda,
+                Itens: [.. _carrinho.Select(i => new NovoItemVendaDto(
+                    ProdutoId: i.Produto?.Id,
+                    ServicoId: i.Servico?.Id,
+                    DescricaoLivre: i.DescricaoLivre,
+                    Quantidade: i.Quantidade,
+                    ValorUnitario: i.ValorUnitario))]
+            );
+
+            await VendaService.EditarAsync(Venda.Id, dto);
+            Snackbar.Add("Venda atualizada com sucesso.", Severity.Success);
+            MudDialog.Close(DialogResult.Ok(true));
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Erro ao atualizar venda: {ex.Message}", Severity.Error);
+            _salvando = false;
+        }
+    }
+}

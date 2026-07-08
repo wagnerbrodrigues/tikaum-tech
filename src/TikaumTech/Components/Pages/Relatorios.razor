@@ -1,0 +1,293 @@
+@page "/relatorios"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@inject RelatorioService RelatorioService
+@inject PessoaService PessoaService
+@inject IJSRuntime JS
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+
+<PageTitle>Relatórios — Tikaum-Tech</PageTitle>
+
+<MudText Typo="Typo.h5" GutterBottom="true" Class="page-title">Relatórios</MudText>
+
+<MudTabs Elevation="1" Rounded="true" ApplyEffectsToContainer="true">
+    <MudTabPanel Text="Vendas">
+        <!-- Filtros -->
+        <MudPaper Class="pa-4 mt-3 mb-3 no-print" Elevation="0">
+            <MudText Typo="Typo.subtitle1" Class="mb-3">Filtros</MudText>
+            <MudGrid>
+                <MudItem xs="6" md="3">
+                    <MudDatePicker @bind-Date="_inicio" Label="Data início" DateFormat="dd/MM/yyyy" Editable="true" Placeholder="dd/mm/aaaa" />
+                </MudItem>
+                <MudItem xs="6" md="3">
+                    <MudDatePicker @bind-Date="_fim" Label="Data fim" DateFormat="dd/MM/yyyy" Editable="true" Placeholder="dd/mm/aaaa" />
+                </MudItem>
+                <MudItem xs="12" md="4">
+                    <MudAutocomplete T="Pessoa"
+                                     Label="Cliente (opcional)"
+                                     SearchFunc="SearchPessoaAsync"
+                                     @bind-Value="_pessoaSelecionada"
+                                     ToStringFunc="@(p => p?.Nome ?? "")"
+                                     ResetValueOnEmptyText="true"
+                                     CoerceText="false"
+                                     FullWidth="true"
+                                     Clearable="true">
+                        <ItemTemplate Context="p">
+                            @p.Nome
+                            @if (p.Identificacao.Length > 0)
+                            {
+                                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block tk-mono">
+                                    @p.Identificacao
+                                </MudText>
+                            }
+                        </ItemTemplate>
+                    </MudAutocomplete>
+                </MudItem>
+                <MudItem xs="12" md="2" Class="d-flex align-end">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                               StartIcon="@Icons.Material.Filled.Search"
+                               OnClick="GerarAsync" FullWidth="true"
+                               Disabled="_gerando">
+                        Gerar
+                    </MudButton>
+                </MudItem>
+            </MudGrid>
+        </MudPaper>
+
+        <!-- Atalhos de período -->
+        <MudStack Row="true" Spacing="1" Class="mb-3 no-print">
+            <MudChip T="string" Size="Size.Small" OnClick="@(() => DefinirPeriodo(0))">Hoje</MudChip>
+            <MudChip T="string" Size="Size.Small" OnClick="@(() => DefinirPeriodo(7))">Últimos 7 dias</MudChip>
+            <MudChip T="string" Size="Size.Small" OnClick="@(() => DefinirPeriodo(30))">Últimos 30 dias</MudChip>
+            <MudChip T="string" Size="Size.Small" OnClick="DefinirMesAtual">Mês atual</MudChip>
+        </MudStack>
+
+        <!-- Resultados -->
+        @if (_resultado is not null)
+        {
+            <MudPaper Class="pa-4 mb-3" Elevation="1">
+                <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-3">
+                    <MudText Typo="Typo.subtitle1">
+                        @_resultado.Vendas.Count venda(s) — Total: @_resultado.TotalGeral.ToString("C", _ptBR)
+                    </MudText>
+                    <MudSpacer />
+                    <MudButton Variant="Variant.Outlined" Size="Size.Small" Class="no-print"
+                               StartIcon="@Icons.Material.Filled.TableChart"
+                               OnClick="ExportarExcelAsync" Disabled="_exportando">
+                        Exportar Excel
+                    </MudButton>
+                    <MudButton Variant="Variant.Outlined" Size="Size.Small" Class="no-print"
+                               StartIcon="@Icons.Material.Filled.Print"
+                               OnClick="ImprimirRelatorio">
+                        Imprimir / PDF
+                    </MudButton>
+                </MudStack>
+
+                @if (_resultado.Vendas.Count == 0)
+                {
+                    <MudAlert Severity="Severity.Info">Nenhuma venda no período.</MudAlert>
+                }
+                else
+                {
+                    <!-- Subtotais por pessoa -->
+                    @if (_resultado.Subtotais.Count > 1)
+                    {
+                        <MudText Typo="Typo.subtitle2" Class="mb-1">Subtotal por cliente</MudText>
+                        <MudSimpleTable Dense="true" Class="mb-4" Style="max-width:500px">
+                            <tbody>
+                                @foreach (var s in _resultado.Subtotais)
+                                {
+                                    <tr>
+                                        <td>@s.NomePessoa</td>
+                                        <td>@s.NumeroVendas venda(s)</td>
+                                        <td style="text-align:right">@s.Total.ToString("C", _ptBR)</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </MudSimpleTable>
+                    }
+
+                    <!-- Tabela de vendas -->
+                    <MudTable T="Venda" Items="_resultado.Vendas" Dense="true" Hover="true"
+                              Elevation="0" Striped="true" id="tabela-relatorio">
+                        <HeaderContent>
+                            <MudTh>Data</MudTh>
+                            <MudTh>Cliente</MudTh>
+                            <MudTh>Usuário</MudTh>
+                            <MudTh>Itens</MudTh>
+                            <MudTh Style="text-align:right">Valor (R$)</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd>@context.DataHora.ToString("dd/MM/yyyy")</MudTd>
+                            <MudTd>@(context.Pessoa?.Nome ?? "Avulsa")</MudTd>
+                            <MudTd>@(context.Usuario ?? "—")</MudTd>
+                            <MudTd>
+                                @string.Join(", ", context.Itens.Select(i =>
+                                    i.Produto?.Nome ?? i.Servico?.Nome ?? i.DescricaoLivre ?? ""))
+                            </MudTd>
+                            <MudTd Style="text-align:right">@context.ValorTotal.ToString("N2", _ptBR)</MudTd>
+                        </RowTemplate>
+                        <FooterContent>
+                            <MudTd colspan="4" Style="text-align:right;font-weight:bold">TOTAL</MudTd>
+                            <MudTd Style="text-align:right;font-weight:bold">
+                                @_resultado.TotalGeral.ToString("N2", _ptBR)
+                            </MudTd>
+                        </FooterContent>
+                    </MudTable>
+                }
+            </MudPaper>
+        }
+    </MudTabPanel>
+
+    <MudTabPanel Text="Aniversariantes">
+        <!-- Filtro -->
+        <MudPaper Class="pa-4 mt-3 mb-3 no-print" Elevation="0">
+            <MudText Typo="Typo.subtitle1" Class="mb-3">Filtro</MudText>
+            <MudGrid>
+                <MudItem xs="12" md="3">
+                    <MudSelect T="int" @bind-Value="_mes" Label="Mês" @bind-Value:after="GerarAniversariantesAsync">
+                        @for (var m = 1; m <= 12; m++)
+                        {
+                            var mes = m;
+                            <MudSelectItem T="int" Value="mes">@_nomesMeses[mes - 1]</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+            </MudGrid>
+        </MudPaper>
+
+        @if (_aniversariantes is not null)
+        {
+            <MudPaper Class="pa-4 mb-3" Elevation="1">
+                <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-3">
+                    <MudText Typo="Typo.subtitle1">
+                        @_aniversariantes.Count cliente(s) aniversariante(s) em @_nomesMeses[_mes - 1]
+                    </MudText>
+                    <MudSpacer />
+                    <MudButton Variant="Variant.Outlined" Size="Size.Small" Class="no-print"
+                               StartIcon="@Icons.Material.Filled.Print"
+                               OnClick="ImprimirRelatorio">
+                        Imprimir / PDF
+                    </MudButton>
+                </MudStack>
+
+                @if (_aniversariantes.Count == 0)
+                {
+                    <MudAlert Severity="Severity.Info">Nenhum cliente aniversariante neste mês.</MudAlert>
+                }
+                else
+                {
+                    <MudTable T="Aniversariante" Items="_aniversariantes" Dense="true" Hover="true"
+                              Elevation="0" Striped="true">
+                        <HeaderContent>
+                            <MudTh>Dia</MudTh>
+                            <MudTh>Cliente</MudTh>
+                            <MudTh>Nascimento</MudTh>
+                            <MudTh>Celular</MudTh>
+                            <MudTh Class="no-print">Mensagem</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd>@context.Dia</MudTd>
+                            <MudTd><MudLink Href="@($"/pessoas/{context.PessoaId}")">@context.Nome</MudLink></MudTd>
+                            <MudTd>@context.DataNascimento.ToString("dd/MM/yyyy") (completa @context.IdadeCompleta anos)</MudTd>
+                            <MudTd>@(context.Celular ?? "—")</MudTd>
+                            <MudTd Class="no-print">
+                                <MudIconButton Icon="@Icons.Material.Filled.Cake" Size="Size.Small"
+                                               OnClick="@(() => AbrirMensagemAsync(context))" />
+                            </MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                }
+            </MudPaper>
+        }
+    </MudTabPanel>
+</MudTabs>
+
+@code {
+    private static readonly System.Globalization.CultureInfo _ptBR = new("pt-BR");
+    private static readonly string[] _nomesMeses =
+    [
+        "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+        "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
+    ];
+
+    private DateTime? _inicio = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
+    private DateTime? _fim = DateTime.Today;
+    private Pessoa? _pessoaSelecionada;
+    private RelatorioResultado? _resultado;
+    private bool _gerando;
+    private bool _exportando;
+
+    private int _mes = DateTime.Today.Month;
+    private List<Aniversariante>? _aniversariantes;
+
+    protected override async Task OnInitializedAsync() =>
+        await GerarAniversariantesAsync();
+
+    private async Task<IEnumerable<Pessoa>> SearchPessoaAsync(string value, CancellationToken ct) =>
+        await PessoaService.ListarAsync(value);
+
+    private async Task DefinirPeriodo(int dias)
+    {
+        _fim = DateTime.Today;
+        _inicio = dias == 0 ? DateTime.Today : DateTime.Today.AddDays(-dias);
+        await GerarAsync();
+    }
+
+    private async Task DefinirMesAtual()
+    {
+        _inicio = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
+        _fim = DateTime.Today;
+        await GerarAsync();
+    }
+
+    private async Task GerarAsync()
+    {
+        if (_inicio is null || _fim is null)
+        {
+            Snackbar.Add("Informe as datas de início e fim.", Severity.Warning);
+            return;
+        }
+        _gerando = true;
+        _resultado = await RelatorioService.GerarAsync(
+            _inicio.Value, _fim.Value, _pessoaSelecionada?.Id);
+        _gerando = false;
+    }
+
+    private async Task GerarAniversariantesAsync() =>
+        _aniversariantes = await RelatorioService.GerarAniversariantesAsync(_mes);
+
+    private async Task AbrirMensagemAsync(Aniversariante aniversariante)
+    {
+        var parameters = new DialogParameters<AniversarianteMensagemDialog>
+            { { x => x.Nome, aniversariante.Nome } };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true };
+        await DialogService.ShowAsync<AniversarianteMensagemDialog>(
+            $"Mensagem para {aniversariante.Nome}", parameters, options);
+    }
+
+    private async Task ExportarExcelAsync()
+    {
+        if (_resultado is null || _inicio is null || _fim is null) return;
+        _exportando = true;
+        try
+        {
+            var bytes = RelatorioService.ExportarExcel(_resultado, _inicio.Value, _fim.Value);
+            var fileName = $"tikaum_relatorio_{_inicio.Value:yyyy-MM-dd}_{_fim.Value:yyyy-MM-dd}.xlsx";
+            await JS.InvokeVoidAsync("downloadFile", fileName,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", bytes);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Erro ao exportar: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _exportando = false;
+        }
+    }
+
+    private async Task ImprimirRelatorio() =>
+        await JS.InvokeVoidAsync("window.print");
+}

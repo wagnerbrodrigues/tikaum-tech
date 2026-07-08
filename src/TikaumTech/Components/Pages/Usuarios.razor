@@ -1,0 +1,111 @@
+@page "/usuarios"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@using TikaumTech.Data
+@inject UsuarioService UsuarioService
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject AuthenticationStateProvider AuthStateProvider
+
+<PageTitle>Usuários — Tikaum-Tech</PageTitle>
+
+<MudText Typo="Typo.h5" GutterBottom="true" Class="page-title">Usuários</MudText>
+
+<MudStack Row="true" Justify="Justify.FlexEnd" Class="mb-3">
+    <MudButton Variant="Variant.Filled" Color="Color.Primary"
+               StartIcon="@Icons.Material.Filled.PersonAdd"
+               OnClick="AbrirDialogNovoUsuario">
+        Novo Usuário
+    </MudButton>
+</MudStack>
+
+<MudTable T="ApplicationUser" Items="_usuarios" Dense="true" Hover="true"
+          Loading="_carregando" Elevation="1" Striped="true">
+    <HeaderContent>
+        <MudTh>Usuário</MudTh>
+        <MudTh>E-mail</MudTh>
+        <MudTh Style="width:100px"></MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd>@context.UserName</MudTd>
+        <MudTd>@(context.Email ?? "—")</MudTd>
+        <MudTd>
+            <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                           title="Editar"
+                           OnClick="@(() => AbrirDialogEditarAsync(context))" />
+            <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small"
+                           Color="Color.Error" title="Excluir"
+                           OnClick="@(() => ConfirmarExclusaoAsync(context))" />
+        </MudTd>
+    </RowTemplate>
+    <NoRecordsContent>
+        <div class="tk-empty">
+            <MudIcon Icon="@Icons.Material.Outlined.ManageAccounts" />
+            <span>Nenhum usuário encontrado.</span>
+        </div>
+    </NoRecordsContent>
+</MudTable>
+
+@code {
+    private bool _carregando;
+    private List<ApplicationUser> _usuarios = [];
+    private string? _usuarioAtualId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        _usuarioAtualId = authState.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        await CarregarAsync();
+    }
+
+    private async Task CarregarAsync()
+    {
+        _carregando = true;
+        _usuarios = await UsuarioService.ListarAsync();
+        _carregando = false;
+    }
+
+    private async Task AbrirDialogNovoUsuario()
+    {
+        var dialog = await DialogService.ShowAsync<UsuarioDialog>("Novo Usuário");
+        if (!(await dialog.Result)!.Canceled)
+            await CarregarAsync();
+    }
+
+    private async Task AbrirDialogEditarAsync(ApplicationUser usuario)
+    {
+        var parameters = new DialogParameters<UsuarioDialog> { { x => x.Usuario, usuario } };
+        var dialog = await DialogService.ShowAsync<UsuarioDialog>("Editar Usuário", parameters);
+        if (!(await dialog.Result)!.Canceled)
+            await CarregarAsync();
+    }
+
+    private async Task ConfirmarExclusaoAsync(ApplicationUser usuario)
+    {
+        if (usuario.Id == _usuarioAtualId)
+        {
+            Snackbar.Add("Não é possível excluir o usuário com o qual você está logado.", Severity.Warning);
+            return;
+        }
+
+        var parameters = new DialogParameters<ConfirmDialog>
+        {
+            { x => x.Message, $"Excluir o usuário \"{usuario.UserName}\"? Esta ação não pode ser desfeita." },
+            { x => x.ConfirmText, "Excluir" },
+        };
+        var dialog = await DialogService.ShowAsync<ConfirmDialog>("Confirmar exclusão", parameters);
+        if (!(await dialog.Result)!.Canceled)
+        {
+            try
+            {
+                await UsuarioService.DeletarAsync(usuario.Id);
+                Snackbar.Add("Usuário excluído.", Severity.Success);
+                await CarregarAsync();
+            }
+            catch (InvalidOperationException ex)
+            {
+                Snackbar.Add(ex.Message, Severity.Warning);
+            }
+        }
+    }
+}

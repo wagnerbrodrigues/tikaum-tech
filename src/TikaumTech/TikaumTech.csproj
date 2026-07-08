@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UserSecretsId>aspnet-TikaumTech-57865e75-0550-4c46-b7be-45c58508084f</UserSecretsId>
+    <ApplicationIcon>..\..\assets\icon.ico</ApplicationIcon>
+    <!-- Sem janela de console ao rodar TikaumTech.exe (autostart, atalho ou duplo-clique):
+         é um servidor local, não uma ferramenta de linha de comando — o usuário só deve ver
+         o navegador. Só afeta o subsistema do .exe no Windows; irrelevante no Linux. -->
+    <OutputType>WinExe</OutputType>
+    <!-- Permite new CultureInfo("pt-BR") também em modo invariante de globalização
+         (dev neste sandbox Linux roda com DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1 por
+         falta de libicu; sem isto, qualquer tela que formata moeda pt-BR quebra com
+         CultureNotFoundException). No Windows com ICU completo não tem efeito prático. -->
+    <PredefinedCulturesOnly>false</PredefinedCulturesOnly>
+    <!-- NETSDK1188: no build em modo invariante (sandbox), o SDK passa a "validar" o
+         locale dos recursos-satélite dos pacotes (zh-hans etc. de dependências de build
+         como Microsoft.CodeAnalysis) e gera dezenas de avisos sem relevância para um app
+         pt-BR sem satélites próprios. Não ocorre no Windows com ICU completo. -->
+    <NoWarn>$(NoWarn);NETSDK1188</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ClosedXML" Version="0.105.0" />
+    <PackageReference Include="Google.Apis.Drive.v3" Version="1.75.0.4192" />
+    <PackageReference Include="Microsoft.AspNetCore.Diagnostics.EntityFrameworkCore" Version="9.0.17" />
+    <PackageReference Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="9.0.17" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="9.0.17" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Tools" Version="9.0.17" />
+    <PackageReference Include="MudBlazor" Version="9.6.0" />
+  </ItemGroup>
+
+</Project>

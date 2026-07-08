@@ -1,0 +1,63 @@
+# Claude Code — controle de sessão (não pertencem ao repositório)
+STATUS.md
+PROGRESS.md
+loop.md
+check-iteration.py
+settings.json
+.claude/
+
+# Banco de dados e backups
+data/*.db
+data/*.db-shm
+data/*.db-wal
+src/TikaumTech/data/
+data/backups/**/*.db
+data/backups/*.db
+data/backups/runtime_config.json
+data/backups/backup_status.json
+
+# Arquivo de setup de primeiro uso (contém senha temporária)
+data/setup.json
+
+# Credenciais Google Drive (credentials.json, tokens criptografados *.enc,
+# chaves do Data Protection em config/keys/) — nada disso pertence ao repositório
+config/
+src/TikaumTech/config/
+
+# Credenciais/segredos que às vezes acabam soltos na raiz do repo por engano
+# (2026-07-06: um client_secret_*.json do Google OAuth foi commitado por engano
+# pelo hook de checkpoint automático antes desta regra existir — ver STATUS.md)
+client_secret_*.json
+drive/
+
+# Output do publish e instalador gerado
+publish/
+installer-output/
+
+# Log do start_linux.sh (execução em segundo plano)
+logs/
+
+# .NET
+bin/
+obj/
+*.user
+*.suo
+.vs/
+*.nupkg
+TestResults/
+
+# Python (legado em legacy-python/)
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+.pytest_cache/
+*.egg-info/
+
+# Build artifacts (legado Python)
+dist/
+build/
+
+# Ambiente
+.env

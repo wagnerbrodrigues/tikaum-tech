@@ -1,0 +1,22 @@
+@* Badge de status de venda (TIKAUM_SPEC.md §6): EXCLUÍDO / EDITADO / AJUSTE / Concluída.
+   O uppercase vem do CSS (.tk-badge). *@
+@if (Venda.Status == VendaStatus.Deleted)
+{
+    <span class="tk-badge tk-badge-danger">Excluído</span>
+}
+else if (Venda.Status == VendaStatus.Disabled)
+{
+    <span class="tk-badge tk-badge-warning">Editado</span>
+}
+else if (Venda.OriginId is not null)
+{
+    <span class="tk-badge tk-badge-accent">Ajuste</span>
+}
+else
+{
+    <span class="tk-badge tk-badge-success">Concluída</span>
+}
+
+@code {
+    [Parameter, EditorRequired] public Venda Venda { get; set; } = null!;
+}

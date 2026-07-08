@@ -1,0 +1,33 @@
+@* Mensagem de aniversário sugerida para o cliente (TIKAUM_SPEC.md §6, 2026-07-06) — texto
+   editável, com sugestão de brinde/desconto; o app não envia nada, só ajuda a compor. *@
+@inject IJSRuntime JS
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <MudTextField @bind-Value="_mensagem" Label="Mensagem" Variant="Variant.Outlined"
+                      Lines="10" Sizing="InputSizing.Auto" FullWidth="true" />
+    </DialogContent>
+    <DialogActions>
+        <MudButton StartIcon="@Icons.Material.Filled.ContentCopy" OnClick="CopiarAsync">
+            Copiar
+        </MudButton>
+        <MudButton OnClick="@(() => MudDialog.Close(DialogResult.Ok(true)))">Fechar</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] IMudDialogInstance MudDialog { get; set; } = null!;
+    [Parameter] public string Nome { get; set; } = "";
+
+    private string _mensagem = "";
+
+    protected override void OnInitialized() =>
+        _mensagem = RelatorioService.GerarMensagemAniversario(Nome);
+
+    private async Task CopiarAsync()
+    {
+        await JS.InvokeVoidAsync("copyToClipboard", _mensagem);
+        Snackbar.Add("Mensagem copiada.", Severity.Success);
+    }
+}

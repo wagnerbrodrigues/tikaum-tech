@@ -1,0 +1,67 @@
+@inject ServicoService ServicoService
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="_form">
+            <MudTextField @bind-Value="_model.Nome" Label="Nome" Required="true"
+                          RequiredError="Nome é obrigatório." MaxLength="200" Counter="200" Class="mb-3" />
+            <MudNumericField T="decimal" @bind-Value="_model.PrecoPadrao" Label="Preço padrão (R$)"
+                             Required="true" RequiredError="Preço é obrigatório."
+                             Min="0" Format="F2" Class="mb-3" />
+            <MudSwitch T="bool" @bind-Value="_model.Ativo" Label="Ativo" Color="Color.Success" />
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => MudDialog.Cancel())" Disabled="_salvando">Cancelar</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SalvarAsync" Disabled="_salvando">
+            @if (_salvando) { <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-1" /> }
+            Salvar
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] IMudDialogInstance MudDialog { get; set; } = null!;
+    [Parameter] public Servico Servico { get; set; } = new() { Ativo = true };
+
+    private MudForm _form = null!;
+    private Servico _model = new() { Ativo = true };
+    private bool _salvando;
+
+    protected override void OnParametersSet()
+    {
+        _model = new Servico
+        {
+            Id = Servico.Id,
+            Nome = Servico.Nome,
+            PrecoPadrao = Servico.PrecoPadrao,
+            Ativo = Servico.Ativo,
+        };
+    }
+
+    private async Task SalvarAsync()
+    {
+        await _form.ValidateAsync();
+        if (!_form.IsValid) return;
+
+        _salvando = true;
+        try
+        {
+            if (_model.Id == 0)
+                await ServicoService.CriarAsync(_model);
+            else
+                await ServicoService.AtualizarAsync(_model);
+
+            MudDialog.Close();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Erro ao salvar: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _salvando = false;
+        }
+    }
+}

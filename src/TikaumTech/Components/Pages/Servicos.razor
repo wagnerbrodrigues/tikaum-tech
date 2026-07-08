@@ -1,0 +1,113 @@
+@page "/servicos"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@inject ServicoService ServicoService
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<PageTitle>Serviços — Tikaum-Tech</PageTitle>
+
+<MudText Typo="Typo.h5" GutterBottom="true" Class="page-title">Serviços</MudText>
+
+<MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-3" Spacing="2">
+    <MudTextField T="string" @bind-Value="_busca" @bind-Value:after="BuscarAsync"
+                  Placeholder="Buscar por nome..."
+                  Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                  Variant="Variant.Outlined" Clearable="true" FullWidth="true" Immediate="true" />
+    <MudSwitch T="bool" @bind-Value="_mostrarInativos" @bind-Value:after="BuscarAsync"
+               Label="Mostrar inativos" Color="Color.Default" />
+    <MudButton Variant="Variant.Filled" Color="Color.Primary"
+               StartIcon="@Icons.Material.Filled.Add"
+               OnClick="AbrirDialogNovoServico">
+        Novo Serviço
+    </MudButton>
+</MudStack>
+
+<MudTable T="Servico" Items="_servicos" Dense="true" Hover="true"
+          Loading="_carregando" Elevation="1" Striped="true">
+    <HeaderContent>
+        <MudTh>Nome</MudTh>
+        <MudTh Style="text-align:right">Preço padrão</MudTh>
+        <MudTh Style="text-align:center">Status</MudTh>
+        <MudTh Style="width:90px">Ações</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd Style="@(context.Ativo ? "" : "opacity:0.5")">@context.Nome</MudTd>
+        <MudTd Class="tk-mono" Style="@($"text-align:right;{(context.Ativo ? "" : "opacity:0.5")}")">
+            R$ @context.PrecoPadrao.ToString("F2")
+        </MudTd>
+        <MudTd Style="text-align:center">
+            <span class="tk-badge @(context.Ativo ? "tk-badge-success" : "tk-badge-muted")">
+                @(context.Ativo ? "Ativo" : "Inativo")
+            </span>
+        </MudTd>
+        <MudTd>
+            <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                           title="Editar"
+                           OnClick="@(() => AbrirDialogEditarAsync(context))" />
+            <MudIconButton Icon="@(context.Ativo ? Icons.Material.Filled.ToggleOff : Icons.Material.Filled.ToggleOn)"
+                           Size="Size.Small"
+                           title="@(context.Ativo ? "Desativar" : "Ativar")"
+                           Color="@(context.Ativo ? Color.Warning : Color.Success)"
+                           OnClick="@(() => AlternarAtivoAsync(context))" />
+        </MudTd>
+    </RowTemplate>
+    <NoRecordsContent>
+        <div class="tk-empty">
+            <MudIcon Icon="@Icons.Material.Outlined.Colorize" />
+            <span>@(string.IsNullOrWhiteSpace(_busca) ? "Nenhum serviço cadastrado ainda." : "Nenhum serviço encontrado.")</span>
+        </div>
+    </NoRecordsContent>
+    <PagerContent>
+        <MudTablePager PageSizeOptions="new[] { 25, 50, 100 }" RowsPerPageString="Linhas por página:" />
+    </PagerContent>
+</MudTable>
+
+@code {
+    // Acesso rápido do dashboard: /servicos?novo=1 abre direto o diálogo de cadastro
+    [SupplyParameterFromQuery(Name = "novo")] public int? Novo { get; set; }
+
+    private string _busca = "";
+    private bool _mostrarInativos;
+    private bool _carregando;
+    private List<Servico> _servicos = [];
+
+    protected override async Task OnInitializedAsync() => await BuscarAsync();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && Novo == 1)
+            await AbrirDialogNovoServico();
+    }
+
+    private async Task BuscarAsync()
+    {
+        _carregando = true;
+        _servicos = await ServicoService.ListarAsync(_busca, apenasAtivos: !_mostrarInativos);
+        _carregando = false;
+    }
+
+    private async Task AbrirDialogNovoServico()
+    {
+        var dialog = await DialogService.ShowAsync<ServicoDialog>("Novo Serviço");
+        if (!(await dialog.Result)!.Canceled)
+            await BuscarAsync();
+    }
+
+    private async Task AbrirDialogEditarAsync(Servico servico)
+    {
+        var parameters = new DialogParameters<ServicoDialog> { { x => x.Servico, servico } };
+        var dialog = await DialogService.ShowAsync<ServicoDialog>("Editar Serviço", parameters);
+        if (!(await dialog.Result)!.Canceled)
+            await BuscarAsync();
+    }
+
+    private async Task AlternarAtivoAsync(Servico servico)
+    {
+        await ServicoService.AlternarAtivoAsync(servico.Id);
+        var msg = servico.Ativo ? $"{servico.Nome} desativado." : $"{servico.Nome} ativado.";
+        Snackbar.Add(msg, Severity.Info);
+        await BuscarAsync();
+    }
+
+}

@@ -1,0 +1,153 @@
+@inherits LayoutComponentBase
+
+<MudThemeProvider Theme="_theme" IsDarkMode="true" />
+<InteractiveProviders />
+
+@* O @Body é renderizado nos DOIS ramos — nunca esconder a tela de login atrás do
+   guard de autenticação (bug da Rodada 6). Só o chrome (sidebar/topbar) é condicional.
+   O toggle da sidebar é 100% JS (js/shell.js): este layout é estático (interatividade
+   por página desde a Rodada 19), então @onclick aqui não dispara — as classes
+   tk-sb-open/tk-sb-closed são aplicadas pelo script, nunca pelo servidor. *@
+<AuthorizeView>
+    <Authorized>
+        <div class="tk-shell">
+            <div class="tk-sidebar-overlay"></div>
+
+            <aside class="tk-sidebar">
+                <div class="tk-logo-block">
+                    @* Logo: agulhas de tatuagem cruzadas em X (TIKAUM_SPEC.md §13) *@
+                    <svg width="48" height="48" viewBox="0 0 48 48" fill="none" stroke="#C4A265"
+                         stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <circle cx="10" cy="5" r="2" />
+                        <path d="M11.5 7 L35 37" />
+                        <path d="M35 37 L39.4 42.6" stroke-width="0.9" />
+                        <path d="M16.3 16.6 L23.7 26.1 M19.7 13.9 L27.1 23.4 M16.3 16.6 L19.7 13.9 M23.7 26.1 L27.1 23.4" />
+                        <circle cx="38" cy="5" r="2" />
+                        <path d="M36.5 7 L13 37" />
+                        <path d="M13 37 L8.6 42.6" stroke-width="0.9" />
+                        <path d="M31.7 16.6 L24.3 26.1 M28.3 13.9 L20.9 23.4 M31.7 16.6 L28.3 13.9 M24.3 26.1 L20.9 23.4" />
+                    </svg>
+                    <div class="tk-logo-name">TIKAUM</div>
+                    <div class="tk-logo-sub">Tattoo Studio</div>
+                    <div class="tk-logo-tagline">Arte na pele ◆ Para sempre</div>
+                </div>
+
+                <div class="tk-sidebar-sep"></div>
+
+                <NavMenu />
+
+                @* Skull realista com flores e borboletas — blackwork com tom dourado via
+                   filtro CSS (TIKAUM_SPEC.md §13, imagem: images/skull_sidebar.png) *@
+                <div class="sidebar-skull-wrapper">
+                    <img src="/images/skull_sidebar.png"
+                         alt=""
+                         class="sidebar-skull-img"
+                         aria-hidden="true" />
+                </div>
+            </aside>
+
+            <div class="tk-main-col">
+                <header class="tk-topbar">
+                    <button type="button" class="tk-burger" title="Menu" aria-label="Alternar menu">
+                        <MudIcon Icon="@Icons.Material.Filled.Menu" />
+                    </button>
+                    <div>
+                        <div class="tk-welcome-1">Bem-vindo ao seu estúdio.</div>
+                        <div class="tk-welcome-2">Gerencie clientes, produtos, serviços e vendas.</div>
+                    </div>
+                    <a class="tk-user" href="/Account/Manage/ChangePassword" title="Perfil">
+                        <div class="tk-avatar">@Iniciais(context.User.Identity?.Name)</div>
+                        <div class="tk-user-info">
+                            <div class="tk-user-name">@context.User.Identity?.Name</div>
+                            <div class="tk-user-role">Profissional</div>
+                        </div>
+                        <MudIcon Icon="@Icons.Material.Filled.ExpandMore" />
+                    </a>
+                </header>
+
+                <BackupBanner />
+
+                <main class="tk-content">
+                    @Body
+                    <TikaumFooter />
+                </main>
+            </div>
+        </div>
+    </Authorized>
+    <NotAuthorized>
+        <div class="tk-anon">
+            @Body
+            <TikaumFooter />
+        </div>
+    </NotAuthorized>
+</AuthorizeView>
+
+@code {
+    private static string Iniciais(string? nome) =>
+        string.IsNullOrWhiteSpace(nome)
+            ? "TK"
+            : new string(nome.Trim().ToUpperInvariant().Take(2).ToArray());
+
+    private static readonly MudTheme _theme = new()
+    {
+        // Paleta = design tokens do TIKAUM_SPEC.md §13
+        PaletteDark = new PaletteDark
+        {
+            Black = "#0C0C0B",
+            Background = "#111110",
+            BackgroundGray = "#1C1C1A",
+            Surface = "#1C1C1A",
+            DrawerBackground = "#1C1C1A",
+            DrawerText = "#E8DDC8",
+            DrawerIcon = "#7A7060",
+            AppbarBackground = "#111110",
+            AppbarText = "#E8DDC8",
+            Primary = "#C4A265",
+            PrimaryContrastText = "#111110",
+            Secondary = "#C4A265",
+            SecondaryContrastText = "#111110",
+            Tertiary = "#7A7060",
+            Info = "#C4A265",
+            InfoContrastText = "#111110",
+            Success = "#5DBF7A",
+            SuccessContrastText = "#111110",
+            Warning = "#D4A017",
+            WarningContrastText = "#111110",
+            Error = "#BF5D5D",
+            ErrorContrastText = "#111110",
+            Dark = "#1C1C1A",
+            TextPrimary = "#E8DDC8",
+            TextSecondary = "#7A7060",
+            TextDisabled = "#4A4640",
+            ActionDefault = "#9A8F7C",
+            ActionDisabled = "#4A4640",
+            ActionDisabledBackground = "#1A1A18",
+            Divider = "rgba(196,162,101,0.15)",
+            DividerLight = "rgba(196,162,101,0.10)",
+            TableLines = "rgba(196,162,101,0.15)",
+            TableStriped = "rgba(196,162,101,0.03)",
+            TableHover = "rgba(196,162,101,0.06)",
+            LinesDefault = "rgba(196,162,101,0.15)",
+            LinesInputs = "rgba(196,162,101,0.30)",
+            GrayLight = "#242420",
+            GrayLighter = "#1C1C1A",
+            GrayDark = "#1A1A18",
+            OverlayDark = "rgba(0,0,0,0.7)",
+            HoverOpacity = 0.06,
+        },
+        Typography = new Typography
+        {
+            Default = new DefaultTypography
+            {
+                FontFamily = ["Inter", "Segoe UI", "system-ui", "sans-serif"],
+            },
+            H4 = new H4Typography { FontFamily = ["Cinzel", "Georgia", "serif"] },
+            H5 = new H5Typography { FontFamily = ["Cinzel", "Georgia", "serif"] },
+            H6 = new H6Typography { FontFamily = ["Cinzel", "Georgia", "serif"] },
+        },
+        LayoutProperties = new LayoutProperties
+        {
+            DefaultBorderRadius = "6px",
+        },
+    };
+}

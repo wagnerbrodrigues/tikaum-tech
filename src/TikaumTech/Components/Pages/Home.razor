@@ -1,0 +1,188 @@
+@page "/"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@inject PessoaService PessoaService
+@inject VendaService VendaService
+
+<PageTitle>Dashboard — Tikaum-Tech</PageTitle>
+
+<!-- Hero -->
+<div class="tk-hero">
+    @* Skull com flores como textura de fundo — opacity 0.07 + filtro dourado (TIKAUM_SPEC.md §13) *@
+    <div class="hero-bg-skull" aria-hidden="true"></div>
+    <h1 class="tk-hero-title">
+        Olá, <AuthorizeView><span class="tk-accent">@context.User.Identity?.Name</span></AuthorizeView>
+        <MudIcon Icon="@Icons.Material.Filled.Bolt" />
+    </h1>
+    <div class="tk-hero-sub">Aqui está o resumo do seu estúdio hoje.</div>
+</div>
+
+<!-- Cards de métricas: só Clientes e Vendas (TIKAUM_SPEC.md §13, Revisão 3 — linha única, valor à direita) -->
+<div class="tk-metrics">
+    <div class="tk-metric-card">
+        <div class="tk-metric-left">
+            <div class="tk-metric-icon"><MudIcon Icon="@Icons.Material.Filled.People" /></div>
+            <div class="tk-metric-text">
+                <div class="tk-metric-label">Clientes cadastrados</div>
+                <a class="tk-metric-link" href="/pessoas">Ver todos →</a>
+            </div>
+        </div>
+        <div class="tk-metric-value">@_totalClientes</div>
+    </div>
+    <div class="tk-metric-card">
+        <div class="tk-metric-left">
+            <div class="tk-metric-icon"><MudIcon Icon="@Icons.Material.Filled.ShoppingBag" /></div>
+            <div class="tk-metric-text">
+                <div class="tk-metric-label">Vendas realizadas</div>
+                <a class="tk-metric-link" href="/vendas">Ver todas →</a>
+            </div>
+        </div>
+        <div class="tk-metric-value">@_totalVendas</div>
+    </div>
+</div>
+
+<div class="tk-dash-grid">
+    <!-- Vendas do Dia (só status active — TIKAUM_SPEC.md §5) -->
+    <div class="tk-panel">
+        <div class="tk-panel-head">
+            <MudIcon Icon="@Icons.Material.Filled.Today" />
+            <span class="tk-panel-title">Vendas do Dia</span>
+            <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" Href="/vendas/nova">
+                Nova venda →
+            </MudButton>
+        </div>
+        @if (_vendasDia.Count == 0)
+        {
+            <div class="tk-empty">
+                <MudIcon Icon="@Icons.Material.Outlined.Today" />
+                <span>Nenhuma venda hoje ainda.</span>
+            </div>
+        }
+        else
+        {
+            <div class="tk-panel-scroll">
+                <table class="tk-table">
+                    <thead>
+                        <tr>
+                            <th>Cliente</th>
+                            <th>Itens</th>
+                            <th class="tk-right">Total</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var venda in _vendasDia)
+                        {
+                            <tr>
+                                <td>@(venda.Pessoa?.Nome ?? "Avulsa")</td>
+                                <td>@PluralItens(venda.Itens.Count)</td>
+                                <td class="tk-right tk-mono">@venda.ValorTotal.ToString("C", _ptBR)</td>
+                                <td><span class="tk-badge tk-badge-success">Concluída</span></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            <div class="tk-panel-foot">
+                <span>Total do dia: @_totalDia.ToString("C", _ptBR)</span>
+                <span>@PluralVendas(_qtdDia)</span>
+            </div>
+        }
+    </div>
+
+    <!-- Vendas do Mês (só status active — TIKAUM_SPEC.md §5) -->
+    <div class="tk-panel">
+        <div class="tk-panel-head">
+            <MudIcon Icon="@Icons.Material.Filled.CalendarMonth" />
+            <span class="tk-panel-title">Vendas do Mês</span>
+            <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" Href="/vendas">
+                Ver todas →
+            </MudButton>
+        </div>
+        @if (_vendasMes.Count == 0)
+        {
+            <div class="tk-empty">
+                <MudIcon Icon="@Icons.Material.Outlined.CalendarMonth" />
+                <span>Nenhuma venda este mês.</span>
+            </div>
+        }
+        else
+        {
+            <div class="tk-panel-scroll">
+                <table class="tk-table">
+                    <thead>
+                        <tr>
+                            <th>Data</th>
+                            <th>Cliente</th>
+                            <th>Itens</th>
+                            <th class="tk-right">Total</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var venda in _vendasMes)
+                        {
+                            <tr>
+                                <td class="tk-mono">@venda.DataHora.ToString("dd/MM")</td>
+                                <td>@(venda.Pessoa?.Nome ?? "Avulsa")</td>
+                                <td>@PluralItens(venda.Itens.Count)</td>
+                                <td class="tk-right tk-mono">@venda.ValorTotal.ToString("C", _ptBR)</td>
+                                <td><span class="tk-badge tk-badge-success">Concluída</span></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            <div class="tk-panel-foot">
+                <span>Total do mês: @_totalMes.ToString("C", _ptBR)</span>
+                <span>@PluralVendas(_qtdMes)</span>
+                <span>Ticket médio: @_ticketMedioMes.ToString("C", _ptBR)</span>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private static readonly System.Globalization.CultureInfo _ptBR = new("pt-BR");
+
+    private const int MaxLinhasPainel = 8;
+
+    private int _totalClientes;
+    private int _totalVendas;
+    private List<Venda> _vendasDia = [];
+    private List<Venda> _vendasMes = [];
+    private int _qtdDia;
+    private int _qtdMes;
+    private decimal _totalDia;
+    private decimal _totalMes;
+    private decimal _ticketMedioMes;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _totalClientes = await PessoaService.ContarAsync();
+        _totalVendas = await VendaService.ContarAtivasAsync();
+
+        var hoje = DateTime.Today;
+        var primeiroDiaMes = new DateTime(hoje.Year, hoje.Month, 1);
+
+        // Uma consulta só (o dia é subconjunto do mês). Totalizadores consideram TODAS as
+        // vendas do período; as tabelas mostram só as 8 mais recentes (é resumo, sem paginação).
+        var vendasMes = await VendaService.ListarAsync(inicio: primeiroDiaMes);
+        var vendasDia = vendasMes.Where(v => v.DataHora >= hoje).ToList();
+
+        _qtdDia = vendasDia.Count;
+        _totalDia = vendasDia.Sum(v => v.ValorTotal);
+        _vendasDia = vendasDia.Take(MaxLinhasPainel).ToList();
+
+        _qtdMes = vendasMes.Count;
+        _totalMes = vendasMes.Sum(v => v.ValorTotal);
+        _ticketMedioMes = _qtdMes > 0 ? Math.Round(_totalMes / _qtdMes, 2) : 0;
+        _vendasMes = vendasMes.Take(MaxLinhasPainel).ToList();
+    }
+
+    private static string PluralItens(int quantidade) =>
+        quantidade == 1 ? "1 item" : $"{quantidade} itens";
+
+    private static string PluralVendas(int quantidade) =>
+        quantidade == 1 ? "1 venda" : $"{quantidade} vendas";
+}

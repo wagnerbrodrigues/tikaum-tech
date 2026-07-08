@@ -1,0 +1,123 @@
+@page "/Account/Login"
+
+@using System.ComponentModel.DataAnnotations
+@using Microsoft.AspNetCore.Authentication
+@using Microsoft.AspNetCore.Identity
+@using TikaumTech.Data
+
+@inject SignInManager<ApplicationUser> SignInManager
+@inject ILogger<Login> Logger
+@inject NavigationManager NavigationManager
+@inject IdentityRedirectManager RedirectManager
+
+<PageTitle>Entrar — Tikaum-Tech</PageTitle>
+
+<div class="login-card">
+        <div class="d-flex justify-center">
+            @* Logo: agulhas de tatuagem cruzadas (mesma arte da sidebar) *@
+            <svg width="48" height="48" viewBox="0 0 48 48" fill="none" stroke="#C4A265"
+                 stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="10" cy="5" r="2" />
+                <path d="M11.5 7 L35 37" />
+                <path d="M35 37 L39.4 42.6" stroke-width="0.9" />
+                <path d="M16.3 16.6 L23.7 26.1 M19.7 13.9 L27.1 23.4 M16.3 16.6 L19.7 13.9 M23.7 26.1 L27.1 23.4" />
+                <circle cx="38" cy="5" r="2" />
+                <path d="M36.5 7 L13 37" />
+                <path d="M13 37 L8.6 42.6" stroke-width="0.9" />
+                <path d="M31.7 16.6 L24.3 26.1 M28.3 13.9 L20.9 23.4 M31.7 16.6 L28.3 13.9 M24.3 26.1 L20.9 23.4" />
+            </svg>
+        </div>
+        <div class="login-title">TIKAUM</div>
+        <div class="login-sub">Tattoo Studio</div>
+        <div class="login-tagline">Arte na pele ◆ Para sempre</div>
+
+        <StatusMessage Message="@_erro" />
+
+        <EditForm Model="Input" method="post" OnValidSubmit="LoginUser" FormName="login">
+            <DataAnnotationsValidator />
+
+            @* MudTextField/MudCheckBox não podem ser usados aqui: esta página é renderizada
+               estaticamente (obrigatório para o SignInManager gravar o cookie de autenticação)
+               e os componentes do MudBlazor só sincronizam valor via circuito interativo — sem
+               circuito, o <input> não recebe atributo "name" e o POST chega sem Input.Usuario/
+               Input.Password, derrubando o EditForm com Model nulo. InputText/InputCheckbox
+               (nativos do Blazor) renderizam o "name" corretamente também em modo estático. *@
+            <div class="login-field mb-3">
+                <label for="login-usuario">Usuário</label>
+                <InputText id="login-usuario" @bind-Value="Input.Usuario" class="login-input" autocomplete="username" />
+                <ValidationMessage For="() => Input.Usuario" />
+            </div>
+
+            <div class="login-field mb-4">
+                <label for="login-senha">Senha</label>
+                <InputText id="login-senha" type="password" @bind-Value="Input.Password" class="login-input" autocomplete="current-password" />
+                <ValidationMessage For="() => Input.Password" />
+            </div>
+
+            <MudButton ButtonType="ButtonType.Submit"
+                       Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       FullWidth="true"
+                       Class="mt-3"
+                       Size="Size.Large">
+                Entrar
+            </MudButton>
+        </EditForm>
+
+        @* Ajuda a confirmar se a instalação foi atualizada de fato — ver CLAUDE.md/STATUS.md *@
+        <MudText Typo="Typo.caption" Align="Align.Center" Class="mt-4" Style="opacity:0.35;display:block">
+            Versão instalada: @(TikaumTech.BuildInfo.Timestamp == DateTime.MinValue ? "desconhecida" : TikaumTech.BuildInfo.Timestamp.ToString("dd/MM/yyyy HH:mm"))
+        </MudText>
+</div>
+
+@code {
+    private string? _erro;
+
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    [SupplyParameterFromForm]
+    private InputModel Input { get; set; } = new();
+
+    [SupplyParameterFromQuery]
+    private string? ReturnUrl { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (HttpMethods.IsGet(HttpContext.Request.Method))
+            await HttpContext.SignOutAsync(IdentityConstants.ExternalScheme);
+    }
+
+    public async Task LoginUser()
+    {
+        // Sempre sessão (nunca persistente) — terminal compartilhado do estúdio; cookie
+        // não deve sobreviver ao navegador fechar de verdade (2026-07-06, ver STATUS.md).
+        var result = await SignInManager.PasswordSignInAsync(
+            Input.Usuario, Input.Password, isPersistent: false, lockoutOnFailure: false);
+
+        if (result.Succeeded)
+        {
+            Logger.LogInformation("Login: {User}", Input.Usuario);
+            RedirectManager.RedirectTo(ReturnUrl);
+        }
+        else if (result.IsLockedOut)
+        {
+            Logger.LogWarning("Conta bloqueada: {User}", Input.Usuario);
+            RedirectManager.RedirectTo("Account/Lockout");
+        }
+        else
+        {
+            _erro = "Usuário ou senha incorretos.";
+        }
+    }
+
+    private sealed class InputModel
+    {
+        [Required(ErrorMessage = "Informe o usuário.")]
+        public string Usuario { get; set; } = "";
+
+        [Required(ErrorMessage = "Informe a senha.")]
+        [DataType(DataType.Password)]
+        public string Password { get; set; } = "";
+    }
+}

@@ -1,0 +1,348 @@
+@page "/backup"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@inject BackupService BackupService
+@inject ISnackbar Snackbar
+
+<PageTitle>Backup — Tikaum-Tech</PageTitle>
+
+<MudText Typo="Typo.h5" GutterBottom="true" Class="page-title">Backup</MudText>
+
+<!-- Status geral -->
+<MudGrid Class="mb-3">
+    <MudItem xs="12" md="6">
+        <MudPaper Class="pa-4" Elevation="1">
+            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mb-2">
+                <MudIcon Icon="@Icons.Material.Filled.Usb"
+                         Color="@(_penDriveConectado ? Color.Success : Color.Error)" />
+                <MudText Typo="Typo.subtitle1">Pen Drive</MudText>
+            </MudStack>
+
+            @if (!_penDriveConfigurado)
+            {
+                <MudAlert Severity="Severity.Warning" Dense="true">
+                    Nenhum volume configurado. Selecione abaixo.
+                </MudAlert>
+            }
+            else if (!_penDriveConectado)
+            {
+                <MudAlert Severity="Severity.Error" Dense="true">
+                    Volume "<strong>@_config.PenDriveVolumeName</strong>" não encontrado.
+                    Conecte o pen drive.
+                </MudAlert>
+            }
+            else
+            {
+                <MudAlert Severity="Severity.Success" Dense="true">
+                    Conectado: <strong>@_config.PenDriveVolumeName</strong>
+                </MudAlert>
+            }
+
+            <MudText Typo="Typo.body2" Class="mt-2">
+                Último backup:
+                @if (_status.PenDrive.UltimoOk.HasValue)
+                {
+                    <strong>@_status.PenDrive.UltimoOk.Value.ToString("dd/MM/yyyy HH:mm")</strong>
+                    <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" Size="Size.Small" />
+                }
+                else
+                {
+                    <span style="color:var(--mud-palette-text-secondary)">nunca realizado</span>
+                }
+            </MudText>
+
+            @if (_status.PenDrive.Status == "erro")
+            {
+                <MudText Color="Color.Error" Typo="Typo.caption">
+                    Erro: @_status.PenDrive.MensagemErro
+                </MudText>
+            }
+
+            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Backup"
+                       Disabled="@(!_penDriveConectado || _fazendoBackup)"
+                       OnClick="FazerBackupPenDriveAsync"
+                       Class="mt-3" FullWidth="true">
+                @if (_fazendoBackup)
+                {
+                    <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-1" />
+                }
+                Fazer backup agora
+            </MudButton>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" md="6">
+        <MudPaper Class="pa-4" Elevation="1">
+            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mb-2">
+                <MudIcon Icon="@Icons.Material.Filled.Cloud"
+                         Color="@(_gdriveConectado ? Color.Success : Color.Default)" />
+                <MudText Typo="Typo.subtitle1">Google Drive</MudText>
+            </MudStack>
+
+            @if (!_gdriveCredencial)
+            {
+                <MudAlert Severity="Severity.Warning" Dense="true">
+                    Falta o arquivo de credenciais do Google. Siga as instruções abaixo
+                    (uma única vez) e depois clique em Conectar.
+                </MudAlert>
+                <MudText Typo="Typo.body2" Class="mt-2" Style="color:var(--color-text-secondary)">
+                    1. Acesse <code>console.cloud.google.com</code> logado como
+                    <strong>@_config.GoogleDriveAccountEmail</strong> e crie um projeto (ex.: "TikaumTech").<br />
+                    2. Em "APIs e serviços", ative a <strong>Google Drive API</strong>.<br />
+                    3. Em "Tela de permissão OAuth", configure como Externo e adicione
+                    <strong>@_config.GoogleDriveAccountEmail</strong> como usuário de teste.<br />
+                    4. Em "Credenciais", crie um <strong>ID do cliente OAuth</strong> do tipo
+                    "Aplicativo para computador" e baixe o JSON.<br />
+                    5. Salve o arquivo como <code>@BackupService.CaminhoCredenciaisGoogle</code>.
+                </MudText>
+                <MudText Typo="Typo.caption" Class="mt-2 d-block" Style="color:var(--color-text-muted)">
+                    A senha da conta Google nunca é digitada nem armazenada no sistema — o Google
+                    não permite acesso por senha via aplicativo; a autorização é feita uma única
+                    vez no navegador e o token resultante fica criptografado em disco.
+                </MudText>
+            }
+            else if (!_gdriveConectado)
+            {
+                <MudAlert Severity="Severity.Info" Dense="true">
+                    Credenciais encontradas. Clique em <strong>Conectar</strong> — o navegador vai
+                    abrir para autorizar com a conta <strong>@_config.GoogleDriveAccountEmail</strong>
+                    (uma única vez).
+                </MudAlert>
+            }
+            else
+            {
+                <MudAlert Severity="Severity.Success" Dense="true">
+                    Conectado: <strong>@(_config.GoogleDriveEmailConectado.Length > 0
+                        ? _config.GoogleDriveEmailConectado : _config.GoogleDriveAccountEmail)</strong>
+                </MudAlert>
+            }
+
+            <MudText Typo="Typo.body2" Class="mt-2">
+                Último backup:
+                @if (_status.GoogleDrive.UltimoOk.HasValue)
+                {
+                    <strong>@_status.GoogleDrive.UltimoOk.Value.ToString("dd/MM/yyyy HH:mm")</strong>
+                    <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" Size="Size.Small" />
+                }
+                else
+                {
+                    <span style="color:var(--mud-palette-text-secondary)">nunca realizado</span>
+                }
+            </MudText>
+
+            @if (_status.GoogleDrive.Status == "erro")
+            {
+                <MudText Color="Color.Error" Typo="Typo.caption">
+                    Erro: @_status.GoogleDrive.MensagemErro
+                </MudText>
+            }
+
+            @if (!_gdriveConectado)
+            {
+                <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Login"
+                           Disabled="@(!_gdriveCredencial || _gdriveOcupado)"
+                           OnClick="ConectarGoogleDriveAsync"
+                           Class="mt-3" FullWidth="true">
+                    @if (_gdriveOcupado)
+                    {
+                        <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-1" />
+                    }
+                    Conectar Google Drive
+                </MudButton>
+            }
+            else
+            {
+                <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Backup"
+                           Disabled="_gdriveOcupado"
+                           OnClick="FazerBackupGoogleDriveAsync"
+                           Class="mt-3" FullWidth="true">
+                    @if (_gdriveOcupado)
+                    {
+                        <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-1" />
+                    }
+                    Fazer backup agora
+                </MudButton>
+                <MudStack Row="true" Spacing="2" Class="mt-2">
+                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small"
+                               StartIcon="@Icons.Material.Filled.NetworkCheck"
+                               Disabled="_gdriveOcupado"
+                               OnClick="TestarGoogleDriveAsync">
+                        Testar conexão
+                    </MudButton>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Error" Size="Size.Small"
+                               StartIcon="@Icons.Material.Filled.LinkOff"
+                               Disabled="_gdriveOcupado"
+                               OnClick="DesconectarGoogleDrive">
+                        Desconectar
+                    </MudButton>
+                </MudStack>
+            }
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+<!-- Seleção de pen drive -->
+<MudPaper Class="pa-4 mb-3" Elevation="1">
+    <MudText Typo="Typo.subtitle1" Class="mb-3">Configurar Pen Drive</MudText>
+
+    @if (_unidadesDisponiveis.Count == 0)
+    {
+        <MudAlert Severity="Severity.Warning">
+            Nenhuma unidade removível detectada. Conecte um pen drive e clique em Atualizar.
+        </MudAlert>
+    }
+    else
+    {
+        <MudText Typo="Typo.body2" Class="mb-2">
+            Selecione o pen drive que deve receber os backups:
+        </MudText>
+        <MudRadioGroup T="string" @bind-Value="_volumeSelecionado">
+            @foreach (var drive in _unidadesDisponiveis)
+            {
+                <MudRadio T="string" Value="@BackupService.NomeVolume(drive)" Color="Color.Primary">
+                    <MudText>
+                        <strong>@BackupService.NomeVolume(drive)</strong>
+                        — @drive.Name
+                        (@FormatBytes(drive.AvailableFreeSpace) livre de @FormatBytes(drive.TotalSize))
+                    </MudText>
+                </MudRadio>
+            }
+        </MudRadioGroup>
+
+        <MudStack Row="true" Spacing="2" Class="mt-3">
+            <MudButton Variant="Variant.Filled" Color="Color.Secondary"
+                       Disabled="@string.IsNullOrWhiteSpace(_volumeSelecionado)"
+                       OnClick="SalvarPenDrive">
+                Salvar seleção
+            </MudButton>
+        </MudStack>
+    }
+
+    <MudButton Variant="Variant.Outlined" Size="Size.Small"
+               StartIcon="@Icons.Material.Filled.Refresh"
+               OnClick="AtualizarUnidades" Class="mt-3">
+        Atualizar unidades
+    </MudButton>
+</MudPaper>
+
+<!-- Informações -->
+<MudPaper Class="pa-4" Elevation="1">
+    <MudText Typo="Typo.subtitle1" Class="mb-2">Como funciona o backup</MudText>
+    <MudList T="string" Dense="true">
+        <MudListItem T="string" Icon="@Icons.Material.Filled.FiberManualRecord">
+            Um arquivo por dia — rodar novamente no mesmo dia sobrescreve, nunca duplica.
+        </MudListItem>
+        <MudListItem T="string" Icon="@Icons.Material.Filled.FiberManualRecord">
+            Retenção de <strong>@_config.RetencaoDias dias</strong> por destino — pen drive e
+            Google Drive contam separadamente (arquivos mais antigos são removidos
+            automaticamente após cada backup bem-sucedido).
+        </MudListItem>
+        <MudListItem T="string" Icon="@Icons.Material.Filled.FiberManualRecord">
+            No Google Drive os arquivos ficam na pasta <code>TikaumBackup</code>; o acesso usa
+            somente o escopo mínimo (o app só enxerga arquivos criados por ele) e o token fica
+            criptografado em <code>config/</code>.
+        </MudListItem>
+        <MudListItem T="string" Icon="@Icons.Material.Filled.FiberManualRecord">
+            O arquivo gerado é uma cópia íntegra do banco SQLite via <code>VACUUM INTO</code>,
+            que pode ser restaurada diretamente.
+        </MudListItem>
+        <MudListItem T="string" Icon="@Icons.Material.Filled.FiberManualRecord">
+            Os arquivos ficam em <code>[PenDrive]\TikaumBackup\tikaum_YYYY-MM-DD.db</code>.
+        </MudListItem>
+    </MudList>
+</MudPaper>
+
+@code {
+    private BackupConfig _config = new();
+    private BackupStatus _status = new();
+    private List<DriveInfo> _unidadesDisponiveis = [];
+    private string _volumeSelecionado = "";
+    private bool _penDriveConfigurado;
+    private bool _penDriveConectado;
+    private bool _fazendoBackup;
+    private bool _gdriveCredencial;
+    private bool _gdriveConectado;
+    private bool _gdriveOcupado;
+
+    protected override void OnInitialized()
+    {
+        Recarregar();
+    }
+
+    private void Recarregar()
+    {
+        _config = BackupService.CarregarConfig();
+        _status = BackupService.CarregarStatus();
+        _penDriveConfigurado = BackupService.PenDriveConfigurado;
+        _penDriveConectado = BackupService.PenDriveConectado;
+        _unidadesDisponiveis = BackupService.ObterUnidadesRemoviveis();
+        _volumeSelecionado = _config.PenDriveVolumeName;
+        _gdriveCredencial = BackupService.GoogleDriveCredencialPresente;
+        _gdriveConectado = BackupService.GoogleDriveConfigurado;
+    }
+
+    private async Task ConectarGoogleDriveAsync()
+    {
+        _gdriveOcupado = true;
+        var (ok, mensagem) = await BackupService.ConectarGoogleDriveAsync();
+        Snackbar.Add(mensagem, ok ? Severity.Success : Severity.Error);
+        Recarregar();
+        _gdriveOcupado = false;
+    }
+
+    private async Task TestarGoogleDriveAsync()
+    {
+        _gdriveOcupado = true;
+        var (ok, mensagem) = await BackupService.TestarConexaoGoogleDriveAsync();
+        Snackbar.Add(mensagem, ok ? Severity.Success : Severity.Error);
+        _gdriveOcupado = false;
+    }
+
+    private async Task FazerBackupGoogleDriveAsync()
+    {
+        _gdriveOcupado = true;
+        var (ok, mensagem) = await BackupService.FazerBackupGoogleDriveAsync();
+        _status = BackupService.CarregarStatus();
+        Snackbar.Add(mensagem, ok ? Severity.Success : Severity.Error);
+        _gdriveOcupado = false;
+    }
+
+    private void DesconectarGoogleDrive()
+    {
+        var (ok, mensagem) = BackupService.DesconectarGoogleDrive();
+        Snackbar.Add(mensagem, ok ? Severity.Info : Severity.Warning);
+        Recarregar();
+    }
+
+    private void AtualizarUnidades() => Recarregar();
+
+    private async Task FazerBackupPenDriveAsync()
+    {
+        _fazendoBackup = true;
+        var (ok, mensagem) = await BackupService.FazerBackupPenDriveAsync();
+        _status = BackupService.CarregarStatus();
+        if (ok)
+            Snackbar.Add(mensagem, Severity.Success);
+        else
+            Snackbar.Add(mensagem, Severity.Error);
+        _fazendoBackup = false;
+    }
+
+    private void SalvarPenDrive()
+    {
+        if (string.IsNullOrWhiteSpace(_volumeSelecionado)) return;
+        BackupService.SalvarVolumePenDrive(_volumeSelecionado);
+        Recarregar();
+        Snackbar.Add($"Pen drive configurado: {_volumeSelecionado}", Severity.Success);
+    }
+
+    private static string FormatBytes(long bytes)
+    {
+        if (bytes >= 1_073_741_824) return $"{bytes / 1_073_741_824.0:F1} GB";
+        if (bytes >= 1_048_576) return $"{bytes / 1_048_576.0:F1} MB";
+        return $"{bytes / 1024.0:F0} KB";
+    }
+}

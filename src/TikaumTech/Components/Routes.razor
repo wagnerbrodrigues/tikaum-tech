@@ -1,0 +1,22 @@
+﻿@using TikaumTech.Components.Account.Shared
+<Router AppAssembly="typeof(Program).Assembly">
+    <Found Context="routeData">
+        <AuthorizeRouteView RouteData="routeData" DefaultLayout="typeof(Layout.MainLayout)">
+            <NotAuthorized>
+                <RedirectToLogin />
+            </NotAuthorized>
+        </AuthorizeRouteView>
+        <FocusOnNavigate RouteData="routeData" Selector="h1" />
+    </Found>
+    @* Sem este template, uma rota não casada no modo interativo renderiza
+       página em branco (o padrão do Router não tem conteúdo) — impossível
+       de diagnosticar à distância. *@
+    <NotFound>
+        <PageTitle>Página não encontrada — Tikaum-Tech</PageTitle>
+        <div style="min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;background:#111110;color:#E8DDC8;font-family:'Inter','Segoe UI',sans-serif;text-align:center;padding:16px">
+            <h2 style="margin:0;font-family:'Cinzel',Georgia,serif">Página não encontrada</h2>
+            <p style="margin:0;color:#7A7060">O endereço digitado não existe neste sistema.</p>
+            <a href="/" style="color:#C4A265">Voltar ao início</a>
+        </div>
+    </NotFound>
+</Router>

@@ -1,0 +1,120 @@
+@page "/pessoas/{Id:int}"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@inject PessoaService PessoaService
+@inject NavigationManager Nav
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<PageTitle>@(_pessoa?.Nome ?? "Cliente") — Tikaum-Tech</PageTitle>
+
+@if (_pessoa is null)
+{
+    <MudProgressLinear Indeterminate="true" />
+}
+else
+{
+    <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4">
+        <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" OnClick="@(() => Nav.NavigateTo("/pessoas"))" />
+        <MudText Typo="Typo.h5">@_pessoa.Nome</MudText>
+        <MudSpacer />
+        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Edit"
+                   OnClick="EditarAsync">Editar</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.ShoppingCart"
+                   Href="@($"/vendas/nova?pessoaId={Id}")">
+            Nova Venda
+        </MudButton>
+    </MudStack>
+
+    <MudGrid Spacing="3">
+        <MudItem xs="12" md="4">
+            <MudPaper Class="pa-4" Elevation="1">
+                <MudText Typo="Typo.subtitle1" Class="mb-3">Dados Cadastrais</MudText>
+                <MudText><b>Nascimento:</b> @(_pessoa.DataNascimento?.ToString("dd/MM/yyyy") ?? "—")</MudText>
+                <MudText><b>Celular:</b> @(_pessoa.Telefone ?? "—")</MudText>
+                <MudText><b>CPF:</b> @(_pessoa.Cpf ?? "—")</MudText>
+                <MudText><b>Cliente desde:</b> @_pessoa.CriadoEm.ToString("dd/MM/yyyy")</MudText>
+                @if (!string.IsNullOrWhiteSpace(_pessoa.Observacoes))
+                {
+                    <MudText Class="mt-2"><b>Observações:</b> @_pessoa.Observacoes</MudText>
+                }
+            </MudPaper>
+        </MudItem>
+
+        <MudItem xs="12" md="8">
+            <MudPaper Class="pa-4" Elevation="1">
+                <MudText Typo="Typo.subtitle1" Class="mb-3">Ficha de Atendimentos</MudText>
+
+                @if (_historico.Count == 0)
+                {
+                    <MudText Color="Color.Secondary">Nenhuma venda registrada.</MudText>
+                }
+                else
+                {
+                    <MudTable T="Venda" Items="_historico" Dense="true" Hover="true" Elevation="0">
+                        <HeaderContent>
+                            <MudTh>Data</MudTh>
+                            <MudTh>Itens</MudTh>
+                            <MudTh Style="text-align:right">Valor</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd>@context.DataHora.ToString("dd/MM/yyyy")</MudTd>
+                            <MudTd>@DescricaoItens(context)</MudTd>
+                            <MudTd Style="text-align:right">@context.ValorTotal.ToString("C", _ptBR)</MudTd>
+                        </RowTemplate>
+                        <FooterContent>
+                            <MudTd colspan="2"><b>Total gasto</b></MudTd>
+                            <MudTd Style="text-align:right">
+                                <b>@_historico.Sum(v => v.ValorTotal).ToString("C", _ptBR)</b>
+                            </MudTd>
+                        </FooterContent>
+                    </MudTable>
+                    @if (_historico.Count > 0)
+                    {
+                        <MudText Typo="Typo.body2" Class="mt-2" Color="Color.Secondary">
+                            Ticket médio: <b>@((_historico.Sum(v => v.ValorTotal) / _historico.Count).ToString("C", _ptBR))</b>
+                            &nbsp;·&nbsp; @_historico.Count atendimento(s)
+                        </MudText>
+                    }
+                }
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+}
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private static readonly System.Globalization.CultureInfo _ptBR =
+        new("pt-BR");
+
+    private Pessoa? _pessoa;
+    private List<Venda> _historico = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        _pessoa = await PessoaService.ObterAsync(Id);
+        if (_pessoa is not null)
+            _historico = await PessoaService.HistoricoAsync(Id);
+    }
+
+    private static string DescricaoItens(Venda venda)
+    {
+        var nomes = venda.Itens.Select(i =>
+            i.Produto?.Nome ?? i.Servico?.Nome ?? i.DescricaoLivre ?? "Item");
+        return string.Join(", ", nomes);
+    }
+
+    private async Task EditarAsync()
+    {
+        if (_pessoa is null) return;
+        var parameters = new DialogParameters<PessoaDialog> { { x => x.Pessoa, _pessoa } };
+        var dialog = await DialogService.ShowAsync<PessoaDialog>("Editar Cliente", parameters);
+        if (!(await dialog.Result)!.Canceled)
+        {
+            _pessoa = await PessoaService.ObterAsync(Id);
+            Snackbar.Add("Dados atualizados.", Severity.Success);
+        }
+    }
+}

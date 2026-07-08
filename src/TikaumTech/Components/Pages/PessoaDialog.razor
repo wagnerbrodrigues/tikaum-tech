@@ -1,0 +1,83 @@
+@inject PessoaService PessoaService
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="_form">
+            <MudTextField @bind-Value="_model.Nome" Label="Nome" Required="true"
+                          RequiredError="Nome é obrigatório." MaxLength="200" Counter="200" Class="mb-3" />
+            <MudDatePicker @bind-Date="_model.DataNascimento" Label="Data de nascimento" Class="mb-3" DateFormat="dd/MM/yyyy" Editable="true" Placeholder="dd/mm/aaaa" />
+            @* MudTextField com Mask, não MudMask cru: o MudMask sozinho renderiza sem o wrapper
+               mud-input-control — Label, HelperText e mensagem de validação nunca aparecem
+               (campo só ficava vermelho, sem texto de erro). *@
+            <MudTextField @bind-Value="_model.Telefone" Mask="@_telefoneMask" Label="Celular"
+                          Placeholder="(00) 00000-0000" Class="mb-3" />
+            <MudTextField @bind-Value="_model.Cpf" Mask="@_cpfMask" Label="CPF" Placeholder="000.000.000-00"
+                          Validation="@(new Func<string, string?>(ValidarCpf))" Class="mb-3" />
+            @* MudBlazor 9 renomeou AutoGrow → Sizing (InputSizing.Auto) *@
+            <MudTextField @bind-Value="_model.Observacoes" Label="Observações"
+                          Lines="3" Sizing="InputSizing.Auto" MaxLength="2000" Counter="2000" />
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => MudDialog.Cancel())" Disabled="_salvando">Cancelar</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SalvarAsync" Disabled="_salvando">
+            @if (_salvando) { <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-1" /> }
+            Salvar
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] IMudDialogInstance MudDialog { get; set; } = null!;
+    [Parameter] public Pessoa Pessoa { get; set; } = new();
+
+    private MudForm _form = null!;
+    private Pessoa _model = new();
+    private bool _salvando;
+
+    private readonly PatternMask _cpfMask = new("000.000.000-00");
+    private readonly MultiMask _telefoneMask = TelefoneMascara.Criar();
+
+    private static string? ValidarCpf(string cpf) =>
+        CpfValidador.EhValido(cpf) ? null : "CPF inválido. Verifique o número digitado.";
+
+    protected override void OnParametersSet()
+    {
+        _model = new Pessoa
+        {
+            Id = Pessoa.Id,
+            Nome = Pessoa.Nome,
+            DataNascimento = Pessoa.DataNascimento,
+            Telefone = Pessoa.Telefone,
+            Cpf = Pessoa.Cpf,
+            Observacoes = Pessoa.Observacoes,
+            CriadoEm = Pessoa.CriadoEm,
+        };
+    }
+
+    private async Task SalvarAsync()
+    {
+        await _form.ValidateAsync();
+        if (!_form.IsValid) return;
+
+        _salvando = true;
+        try
+        {
+            if (_model.Id == 0)
+                await PessoaService.CriarAsync(_model);
+            else
+                await PessoaService.AtualizarAsync(_model);
+
+            MudDialog.Close();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Erro ao salvar: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _salvando = false;
+        }
+    }
+}
