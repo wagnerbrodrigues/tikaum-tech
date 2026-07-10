@@ -1,4 +1,14 @@
 @echo off
+echo Verificando .NET 9...
+dotnet --version >nul 2>&1
+if errorlevel 1 (
+    echo .NET 9 nao encontrado. Baixando e instalando...
+    powershell -Command "Invoke-WebRequest -Uri 'https://dot.net/v1/dotnet-install.ps1' -OutFile '%TEMP%\dotnet-install.ps1'"
+    powershell -ExecutionPolicy Bypass -File "%TEMP%\dotnet-install.ps1" -Channel 9.0 -InstallDir "C:\Program Files\dotnet"
+    del "%TEMP%\dotnet-install.ps1"
+    setx PATH "%PATH%;C:\Program Files\dotnet" /M
+    echo .NET 9 instalado. Continuando...
+)
 setlocal enabledelayedexpansion
 chcp 65001 >nul 2>&1
 
