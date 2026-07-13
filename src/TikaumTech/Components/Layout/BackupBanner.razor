@@ -1,6 +1,7 @@
 @rendermode InteractiveServer
 @implements IDisposable
 @inject BackupService BackupService
+@inject AvisoSistemaService AvisoSistemaService
 @inject ISnackbar Snackbar
 
 @* Substitui o BackupWarning (toast que sobrepunha conteúdo): banner no fluxo do documento,
@@ -22,6 +23,19 @@
                 </span>
                 <a href="/backup" class="backup-alert__link">Ver detalhes →</a>
                 <span class="backup-alert__close" title="Fechar aviso" @onclick="() => _fechouRestore = true">✕</span>
+            </div>
+        }
+        @if (_mostrarCpfsDuplicados && !_fechouCpfsDuplicados)
+        {
+            <div class="backup-alert backup-alert--warning">
+                <MudIcon Icon="@Icons.Material.Filled.Warning" Class="backup-alert__icon" aria-hidden="true" />
+                <span class="backup-alert__text">
+                    @AvisoSistemaService.CpfsDuplicados.Count CPF(s) duplicado(s) na base impedem a
+                    proteção contra CPF repetido: @string.Join(" · ", AvisoSistemaService.CpfsDuplicados).
+                    Corrija em Clientes (edite um dos dois) e reinicie o sistema para ativar.
+                </span>
+                <a href="/pessoas" class="backup-alert__link">Ver clientes →</a>
+                <span class="backup-alert__close" title="Fechar aviso" @onclick="() => _fechouCpfsDuplicados = true">✕</span>
             </div>
         }
         @if (_mostrarPenDrive && !_fechouPenDrive)
@@ -72,10 +86,12 @@
     private bool _mostrarDrive;
     private bool _mostrarDriveErro;
     private bool _mostrarRestore;
+    private bool _mostrarCpfsDuplicados;
     private bool _fechouPenDrive;
     private bool _fechouDrive;
     private bool _fechouDriveErro;
     private bool _fechouRestore;
+    private bool _fechouCpfsDuplicados;
     private string _volumeConfigurado = "";
     private Timer? _timer;
 
@@ -83,7 +99,8 @@
         (_mostrarPenDrive && !_fechouPenDrive) ||
         (_mostrarDrive && !_fechouDrive) ||
         (_mostrarDriveErro && !_fechouDriveErro) ||
-        (_mostrarRestore && !_fechouRestore);
+        (_mostrarRestore && !_fechouRestore) ||
+        (_mostrarCpfsDuplicados && !_fechouCpfsDuplicados);
 
     protected override void OnInitialized()
     {
@@ -116,6 +133,7 @@
         _mostrarDrive = !BackupService.GoogleDriveConfigurado;
         _mostrarDriveErro = BackupService.GoogleDriveConfigurado && BackupService.GoogleDriveComErro;
         _mostrarRestore = BackupService.RestorePendente;
+        _mostrarCpfsDuplicados = AvisoSistemaService.CpfsDuplicados.Count > 0;
     }
 
     public void Dispose() => _timer?.Dispose();

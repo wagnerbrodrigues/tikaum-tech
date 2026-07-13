@@ -30,6 +30,12 @@ System.Globalization.CultureInfo.DefaultThreadCurrentUICulture = ptBR;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Log em arquivo (data/logs/): na máquina do estúdio o app roda por Tarefa Agendada, sem
+// console visível — sem isso, um erro fatal de inicialização é invisível e vira só "o
+// sistema não abre" (relato de 2026-07-13). Complementa os providers padrão (não substitui).
+builder.Logging.AddProvider(
+    new ArquivoLoggerProvider(Path.Combine(builder.Environment.ContentRootPath, "data", "logs")));
+
 // Rodar em Production SEM publish (caso do start_linux.sh, que usa `dotnet run`) servia
 // CSS/JS com 200 e corpo VAZIO — interface "crua", só os controles nativos: fora de
 // Development o host não carrega o manifesto de static web assets do build, e os
@@ -96,6 +102,7 @@ builder.Services.AddScoped<VendaService>();
 builder.Services.AddScoped<RelatorioService>();
 builder.Services.AddScoped<UsuarioService>();
 builder.Services.AddSingleton<BackupService>();
+builder.Services.AddSingleton<AvisoSistemaService>();
 builder.Services.AddHostedService<BackupAutomaticoService>();
 
 var app = builder.Build();
@@ -152,6 +159,30 @@ using (var scope = app.Services.CreateScope())
 
     db.Database.Migrate();
     await db.Database.ExecuteSqlRawAsync("PRAGMA journal_mode=WAL");
+
+    // Índice único de CPF fora da migration versionada (ver comentário em
+    // AddCpfUniqueIndex): CREATE UNIQUE INDEX falha se o banco já tiver CPFs duplicados
+    // de antes da regra existir (2026-07-05) — dentro da migration isso travava
+    // db.Database.Migrate() (sem try/catch) e o app inteiro não subia (relato de
+    // 2026-07-13: "sistema não abre" / erro em várias telas). Tentado em TODO start,
+    // idempotente (IF NOT EXISTS): assim que os duplicados forem corrigidos em
+    // /pessoas, o índice se cria sozinho no restart seguinte, sem intervenção manual.
+    // A validação de duplicidade em PessoaService (nível aplicação) continua ativa
+    // independente do índice — o índice é só a defesa final contra corrida.
+    var avisoSistema = scope.ServiceProvider.GetRequiredService<AvisoSistemaService>();
+    try
+    {
+        await db.Database.ExecuteSqlRawAsync(
+            "CREATE UNIQUE INDEX IF NOT EXISTS ix_pessoas_cpf ON pessoas (cpf) WHERE cpf IS NOT NULL AND cpf != ''");
+    }
+    catch (Exception ex)
+    {
+        avisoSistema.CpfsDuplicados = AvisoSistemaService.ListarCpfsDuplicados(connectionString);
+        app.Logger.LogWarning(ex,
+            "Índice único de CPF (ix_pessoas_cpf) não pôde ser criado — {Quantidade} CPF(s) " +
+            "duplicado(s) pendente(s) de correção em /pessoas: {Lista}",
+            avisoSistema.CpfsDuplicados.Count, string.Join("; ", avisoSistema.CpfsDuplicados));
+    }
 
     var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
     const string senhaPadrao = "admin";

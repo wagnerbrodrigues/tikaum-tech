@@ -182,3 +182,67 @@ nova implantação sobre a instalação existente não muda em nada.
 **Verificação real:** `./build_release.sh` executado no sandbox (publish win-x64 completo,
 `.bat` conferidos em CRLF via `od`, ícone presente no `.exe`); variante `--linux` e cópia
 para destino (pen drive simulado) também exercitadas.
+
+---
+
+## Ciclo 9 — Resiliência a Dados Legados no Startup (Rodada 41, 2026-07-13)
+
+**Objetivo:** incidente relatado pelo estúdio pós-`update.bat` — erro genérico do ASP.NET
+em várias telas, CPF aparentemente sem validar, CPF duplicado conseguiu ser cadastrado.
+
+**Causa raiz:** o banco de produção tinha CPFs duplicados de antes da regra de unicidade
+(2026-07-05). A migration `AddCpfUniqueIndex` (Rodada 39) roda `CREATE UNIQUE INDEX` — que
+o SQLite recusa com dado duplicado — e `db.Database.Migrate()` em `Program.cs` não tinha
+try/catch: a migration travada derrubava o app inteiro. A validação de CPF em código nunca
+teve regressão; o sintoma era o app instável/não subindo de verdade. Dois arquivos órfãos
+já existiam no repo (`ArquivoLogger.cs`, `AvisoSistemaService.cs`, com comentários citando
+"relato de 2026-07-13") — uma sessão anterior já tinha diagnosticado a causa e desenhado a
+correção, mas não chegou a ligar nada no `Program.cs`.
+
+**Decisões:**
+- **Índice fora da migration transacional:** `AddCpfUniqueIndex.Up()` virou no-op; a
+  criação real do índice é um passo pós-migration idempotente em `Program.cs`
+  (`CREATE UNIQUE INDEX IF NOT EXISTS`, dentro de try/catch, tentado em todo start) — nunca
+  mais impede o app de subir, e se autocorrige no restart seguinte à correção dos
+  duplicados em `/pessoas`.
+- **`AvisoSistemaService` ligada:** registrada como singleton, populada quando o índice não
+  pode ser criado, exibida pelo `BackupBanner` (5º tipo de alerta) com a lista
+  "CPF (Nome1, Nome2)" — mesmo padrão dos outros avisos do banner (fecha só até a próxima
+  navegação).
+- **`ArquivoLoggerProvider` ligada:** `builder.Logging.AddProvider(...)` grava em
+  `data/logs/tikaum_AAAA-MM-DD.log` (retenção de 30 dias) — a máquina do estúdio roda por
+  Tarefa Agendada sem console visível; sem log em arquivo, uma falha fatal de startup não
+  deixava rastro nenhum para diagnosticar.
+- **Recuperação total documentada** (`README.md`, `TIKAUM_SPEC.md` §9): cenário de máquina
+  formatada/trocada, diferente do restore normal — `install.bat` numa instalação nova +
+  reconectar a origem do backup. Google Drive exige `credentials.json` de novo (não é
+  copiado em backup, de propósito, é credencial); pen drive não tem essa dependência, por
+  isso é a via mais simples para este cenário.
+- **Backup automático diário revisado, não alterado:** `BackupAutomaticoService` (20s após
+  start + a cada 24h, idempotente por dia) já estava correto; a lacuna real era só não
+  haver log em arquivo para comprovar no dia a dia — resolvida pelo item acima. O status
+  "Último backup" na tela `/backup` já existia.
+- **Build/deploy corrigido para refletir a prática real:** a decisão de 2026-07-11
+  presumia uma máquina de dev separada entregando pacote pronto por pen drive; o usuário
+  esclareceu que opera só com duas máquinas e prefere `git pull` + `build_release.bat`
+  **direto na máquina do estúdio** (que já tem lógica de verificar/instalar o SDK, movida
+  para lá na Rodada 39). `README.md`/`CLAUDE.md` passaram a documentar esse caminho como
+  padrão; `build_release.sh`/pen drive seguem existindo como alternativa.
+- **Todo o histórico acumulado (Rodadas 3–40) foi finalmente commitado** — nunca tinha
+  sido, apesar de já estar em produção (`STATUS.md` documentava os ciclos, mas
+  `origin/main` ficou 2 commits atrás por muito tempo). Consolidado num commit único
+  anterior a este ciclo, para o `git pull` na máquina do estúdio voltar a refletir a
+  realidade.
+
+**Arquivos:** `Program.cs`, `Data/Migrations/20260711120729_AddCpfUniqueIndex.cs`,
+`Components/Layout/BackupBanner.razor`, `Services/ArquivoLogger.cs` e
+`Services/AvisoSistemaService.cs` (ligados, não criados), `TikaumTech.Tests/
+StartupResilienceTests.cs` (novo, 4 testes), `README.md`, `TIKAUM_SPEC.md` §9, `CLAUDE.md`.
+
+**Verificação real:** teste de fumaça ponta a ponta — banco SQLite com dois clientes de
+CPF duplicado (inserido direto, sem passar pelo `PessoaService`, simulando dado legado),
+app publicado rodando de verdade contra ele: log mostra o `CREATE UNIQUE INDEX` falhando e
+sendo capturado, `Usuário 'admin' criado`/`Usuário 'tikaum' criado` seguem normalmente,
+dashboard responde HTTP 200 (não a página de erro genérica) após login via `curl`, e o
+banner novo aparece no HTML com a lista de CPFs duplicados. 113/113 testes passando
+(109 anteriores + 4 novos).

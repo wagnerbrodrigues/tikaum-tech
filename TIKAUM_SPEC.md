@@ -421,6 +421,40 @@ A lógica de backup acima não muda — o restore é só um caminho de volta:
 - O banco substituído **nunca é apagado** — `tikaum_pre_restore_*.db` fica em `data/` como
   arrependimento de última instância.
 
+### Recuperação total — máquina formatada/trocada (2026-07-13)
+
+Cenário diferente do restore acima: o app em si não existe mais na máquina (formatação,
+troca de computador), não só o banco. Passo a passo completo no `README.md` (seção
+"Recuperação total"); resumo: `install.bat` numa instalação nova (banco vazio) →
+disponibilizar a origem (pen drive: só conectar; Google Drive: `credentials.json` +
+"Conectar Google Drive" de novo, porque `config/` — o token — **não é copiado em nenhum
+backup, de propósito**, é credencial e não dado do negócio) → usar a seção "Restaurar
+Backup" normalmente. Pen drive é a via mais simples (sem credencial para reconectar) —
+por isso deve ficar fisicamente separado do computador do estúdio.
+
+### Resiliência da migration do índice de CPF (2026-07-13)
+
+Reabre parcialmente o "Pontos de atenção conhecidos" original (STATUS.md): um banco de
+produção com CPFs duplicados de antes da regra de unicidade (2026-07-05) travava
+`db.Database.Migrate()` — sem try/catch em `Program.cs`, isso impedia o app inteiro de
+subir ("sistema não abre" / erro em várias telas — incidente de 2026-07-13). Correção:
+
+- A migration `AddCpfUniqueIndex` teve o `CREATE UNIQUE INDEX` removido do `Up()` (virou
+  no-op, mantida só por histórico/consistência com o model snapshot).
+- A criação do índice agora é um passo **idempotente pós-migration** em `Program.cs`
+  (`CREATE UNIQUE INDEX IF NOT EXISTS`, tentado em todo start, dentro de try/catch) — nunca
+  impede o app de subir. A validação de duplicidade em `PessoaService` (nível aplicação)
+  continua ativa independente do índice existir ou não.
+- Falha nessa criação (duplicados presentes) é logada e populada em `AvisoSistemaService`
+  (`CpfsDuplicados`, registrado como singleton), exibida pelo `BackupBanner` em todas as
+  telas com a lista "CPF (Nome1, Nome2)" — o índice se cria sozinho no restart seguinte
+  assim que os duplicados forem corrigidos em `/pessoas`, sem qualquer intervenção manual
+  além de corrigir o cadastro.
+- `ArquivoLoggerProvider` (log em arquivo, `data/logs/tikaum_AAAA-MM-DD.log`, retenção de
+  30 dias) foi registrado em `builder.Logging` — a máquina do estúdio roda por Tarefa
+  Agendada sem console visível; sem log em arquivo, uma falha fatal de startup era
+  invisível e virava só "o sistema não abre", sem nenhum rastro para diagnosticar.
+
 ---
 
 ## 10. Autostart no Windows

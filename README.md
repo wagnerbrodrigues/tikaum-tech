@@ -98,29 +98,31 @@ produção do estúdio. Detalhes em `TIKAUM_SPEC.md` §11.
 
 ## Instalação em produção (Windows)
 
-Build e preparação do pacote acontecem **na máquina do desenvolvedor** (a única que
-precisa do .NET SDK — os scripts verificam e instalam se faltar); a máquina do estúdio
-**nunca compila**: só recebe o pacote pronto e executa o instalador/atualizador.
-
-```bash
-# 1. Na máquina do desenvolvedor:
-
-# Linux (o .NET publica win-x64 a partir do Linux — pacote idêntico):
-./build_release.sh                        # gera publish/ com install.bat e update.bat
-./build_release.sh /media/user/PENDRIVE   # idem, e já copia o pacote para o pen drive
-                                          #   (deploy: TikaumTech_AAAA-MM-DD/)
-
-# ou Windows:
-#   build_release.bat                     → gera publish\ com os dois .bat dentro
-```
+**Caminho padrão (git pull direto na máquina do estúdio):** o repositório é clonado ali
+mesmo, e o build acontece localmente antes de instalar/atualizar.
 
 ```bat
-REM 2. Leve o pacote ao computador do estúdio (pen drive, rede)
+REM No computador do estúdio, dentro do clone do repositório:
+git pull
+build_release.bat   REM verifica/instala o SDK se faltar, gera publish\ com os dois .bat dentro
 
-REM 3. No computador do estúdio — clique direito > Executar como administrador:
+cd publish
 install.bat   REM PRIMEIRA instalação
 update.bat    REM ATUALIZAÇÕES (preserva todos os dados)
 ```
+
+**Alternativa (pacote preparado numa máquina separada):** se o build acontecer longe do
+computador do estúdio (ex.: numa máquina Linux de desenvolvimento), o `.NET` publica
+`win-x64` a partir do Linux — pacote idêntico:
+
+```bash
+./build_release.sh                        # gera publish/ com install.bat e update.bat
+./build_release.sh /media/user/PENDRIVE   # idem, e já copia o pacote para o pen drive
+                                          #   (deploy: TikaumTech_AAAA-MM-DD/)
+```
+
+Leve o pacote ao computador do estúdio (pen drive, rede) e rode `install.bat`/`update.bat`
+de dentro dele, como Administrador.
 
 O `install.bat` (primeira instalação) faz automaticamente:
 
@@ -243,6 +245,38 @@ agendado e a troca acontece no **próximo início do sistema** (feche e abra o T
 O banco substituído é preservado como `data/tikaum_pre_restore_[data].db`; um toast
 confirma a restauração após o reinício. Atenção: restaurar substitui todos os dados
 atuais — faça um backup antes (há um botão para isso na própria seção).
+
+### Recuperação total (computador formatado ou trocado)
+
+A seção acima (**Restaurar um backup**) parte de uma instalação já funcionando — ela só
+troca o banco. Se o computador do estúdio for formatado, quebrar, ou os dados precisarem
+ir para uma máquina nova (o app em si não existe mais ali), o caminho é:
+
+1. **Instale o TikaumTech do zero** na máquina nova: `install.bat` (como Administrador) a
+   partir do pacote gerado por `build_release.bat`/`build_release.sh` na máquina do
+   desenvolvedor — ver [Instalação em produção](#instalação-em-produção-windows). Isso cria
+   um banco vazio e os usuários padrão (`admin`/`admin`, `tikaum`/`admin`).
+2. **Disponibilize a origem do backup:**
+   - **Pen drive:** basta conectar o pen drive `TIKAUM_BACKUP` (ou o nome configurado) —
+     os arquivos já estão nele, nada a reconfigurar.
+   - **Google Drive:** o token de acesso fica em `config/` (criptografado, e no Windows
+     vinculado à conta do Windows via DPAPI) — **não é copiado em nenhum backup, de
+     propósito** (é credencial, não dado do negócio). Numa máquina nova, refaça a conexão:
+     salve `credentials.json` de novo em `C:\TikaumTech\config\` (guarde uma cópia dele
+     fora da máquina — ex. no Google Drive da própria conta, ou anexado a este
+     repositório fora do controle de versão — senão será preciso gerar um novo Client ID
+     em `console.cloud.google.com`) e clique em **Conectar Google Drive** na tela
+     **Backup** para autorizar de novo.
+3. **Restaure o backup mais recente:** abra `http://localhost:5000`, faça login e siga
+   **Restaurar um backup** normalmente (acima) — liste os backups da origem disponível e
+   escolha o mais recente. Feche e abra o TikaumTech de novo para aplicar.
+4. **Confira os dados** (contagem de clientes/vendas em `/relatorios`, por exemplo) antes
+   de voltar a usar o sistema no dia a dia.
+
+O pen drive é a via mais simples para este cenário — não depende de reconectar nenhuma
+credencial. Por isso vale manter o pen drive de backup fisicamente separado do computador
+do estúdio (numa gaveta, na casa de alguém de confiança), não preso à máquina o tempo
+todo — um incêndio ou roubo que leva o computador não pode levar o único backup junto.
 
 ---
 
