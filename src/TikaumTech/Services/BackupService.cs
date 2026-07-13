@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.Json;
 using Google.Apis.Auth.OAuth2;
+using Google.Apis.Download;
 using Google.Apis.Drive.v3;
 using Google.Apis.Services;
 using Google.Apis.Upload;
@@ -18,6 +19,13 @@ public class BackupConfig
     public string GoogleDriveEmailConectado { get; set; } = "";
     public int RetencaoDias { get; set; } = 120;
 }
+
+/// <summary>Um arquivo de backup disponível para restauração (TIKAUM_SPEC.md §9).</summary>
+/// <param name="Id">fileId no Google Drive; caminho completo no pen drive.</param>
+public record BackupDisponivel(string Id, string Nome, DateTime? Modificado, long? TamanhoBytes);
+
+/// <summary>Metadados do restore (gravados junto do pending e do concluído).</summary>
+public record RestoreInfo(string Origem, string Backup, DateTime Quando);
 
 public class BackupService(
     IConfiguration configuration,
@@ -493,5 +501,244 @@ public class BackupService(
                 await drive.Files.Delete(pasta.Id).ExecuteAsync(ct);
             }
         }
+    }
+
+    // --- Restore (TIKAUM_SPEC.md §9 — decisão de 2026-07-11) ---
+    // O banco em uso nunca é substituído com o app rodando: a tela /backup só deixa o
+    // snapshot escolhido em data/tikaum_restore_pending.db; a troca de verdade acontece
+    // no próximo startup (AplicarRestorePendente, chamado pelo Program.cs ANTES das
+    // migrations e de qualquer conexão com o banco).
+
+    private string DataDir => Path.GetDirectoryName(ResolverCaminhoDb())!;
+
+    /// <summary>Snapshot aguardando o próximo restart para virar o banco ativo.</summary>
+    public string CaminhoRestorePendente => Path.Combine(DataDir, "tikaum_restore_pending.db");
+    private string RestorePendenteInfoPath => Path.Combine(DataDir, "restore_pending.json");
+    private string RestoreConcluidoInfoPath => Path.Combine(DataDir, "restore_done.json");
+
+    public bool RestorePendente => File.Exists(CaminhoRestorePendente);
+
+    public RestoreInfo? LerRestorePendenteInfo() => LerRestoreInfo(RestorePendenteInfoPath);
+    public RestoreInfo? LerRestoreConcluidoInfo() => LerRestoreInfo(RestoreConcluidoInfoPath);
+
+    /// <summary>Consumido pelo BackupBanner após exibir o toast pós-restauração.</summary>
+    public void LimparRestoreConcluidoInfo()
+    {
+        if (File.Exists(RestoreConcluidoInfoPath)) File.Delete(RestoreConcluidoInfoPath);
+    }
+
+    private RestoreInfo? LerRestoreInfo(string path)
+    {
+        if (!File.Exists(path)) return null;
+        try
+        {
+            return JsonSerializer.Deserialize<RestoreInfo>(File.ReadAllText(path), _jsonOpts);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Falha ao ler {Path}.", path);
+            return null;
+        }
+    }
+
+    public (bool ok, string mensagem) CancelarRestorePendente()
+    {
+        if (!RestorePendente) return (false, "Não há restauração pendente.");
+        File.Delete(CaminhoRestorePendente);
+        if (File.Exists(RestorePendenteInfoPath)) File.Delete(RestorePendenteInfoPath);
+        return (true, "Restauração pendente cancelada. O banco atual permanece em uso.");
+    }
+
+    public async Task<(bool ok, string mensagem, List<BackupDisponivel> backups)> ListarBackupsGoogleDriveAsync()
+    {
+        if (!GoogleDriveCredencialPresente || !GoogleDriveConfigurado)
+            return (false, "Google Drive não conectado. Configure na seção acima.", []);
+        try
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+            var drive = await CriarDriveServiceAsync(cts.Token);
+
+            // Uma busca só, sem descer pasta a pasta: o escopo drive.file limita a visão
+            // aos arquivos criados pelo próprio app, então filtrar pelo padrão de nome dos
+            // snapshots basta (cobre também backups antigos soltos direto em TikaumBackup/).
+            var lista = new List<BackupDisponivel>();
+            string? pageToken = null;
+            do
+            {
+                var busca = drive.Files.List();
+                busca.Q = "name contains 'tikaum_' and name contains '.db' and " +
+                          "mimeType != 'application/vnd.google-apps.folder' and trashed = false";
+                busca.Fields = "nextPageToken, files(id,name,size,modifiedTime)";
+                busca.PageSize = 200;
+                busca.PageToken = pageToken;
+                var resultado = await busca.ExecuteAsync(cts.Token);
+                lista.AddRange(resultado.Files.Select(f => new BackupDisponivel(
+                    f.Id, f.Name, f.ModifiedTimeDateTimeOffset?.LocalDateTime, f.Size)));
+                pageToken = resultado.NextPageToken;
+            } while (pageToken is not null);
+
+            // Nome desce = data desce (tikaum_AAAA-MM-DD.db) — mais recente primeiro
+            return (true, "", [.. lista.OrderByDescending(b => b.Nome, StringComparer.Ordinal)
+                                       .ThenByDescending(b => b.Modificado)]);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Erro ao listar backups do Google Drive");
+            return (false, $"Erro ao listar backups do Google Drive: {ex.Message}", []);
+        }
+    }
+
+    public async Task<(bool ok, string mensagem)> BaixarBackupGoogleDriveAsync(string fileId)
+    {
+        var tempPath = CaminhoRestorePendente + ".part";
+        try
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(10));
+            var drive = await CriarDriveServiceAsync(cts.Token);
+
+            var metaReq = drive.Files.Get(fileId);
+            metaReq.Fields = "name";
+            var nome = (await metaReq.ExecuteAsync(cts.Token)).Name;
+
+            Directory.CreateDirectory(DataDir);
+            await using (var fs = File.Create(tempPath))
+            {
+                var download = await drive.Files.Get(fileId).DownloadAsync(fs, cts.Token);
+                if (download.Status != DownloadStatus.Completed)
+                    throw download.Exception ?? new InvalidOperationException("Download não concluído.");
+            }
+
+            ValidarArquivoSqlite(tempPath);
+            File.Move(tempPath, CaminhoRestorePendente, overwrite: true);
+            GravarRestorePendenteInfo("Google Drive", nome);
+
+            logger.LogInformation("Restore agendado a partir do Google Drive: {Nome}", nome);
+            return (true, $"Backup {nome} baixado. Reinicie o sistema para completar a restauração.");
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Erro ao baixar backup do Google Drive");
+            return (false, $"Erro ao baixar backup: {ex.Message}");
+        }
+        finally
+        {
+            if (File.Exists(tempPath)) File.Delete(tempPath);
+        }
+    }
+
+    public Task<(bool ok, string mensagem, List<BackupDisponivel> backups)> ListarBackupsPenDriveAsync() =>
+        // Task.Run: enumerar um pen drive USB lento não deve travar o circuito Blazor
+        Task.Run<(bool, string, List<BackupDisponivel>)>(() =>
+        {
+            var drive = ObterPenDriveConfigurado();
+            if (drive is null)
+                return (false, "Pen drive não encontrado ou não conectado.", []);
+
+            var raiz = Path.Combine(drive.RootDirectory.FullName, "TikaumBackup");
+            if (!Directory.Exists(raiz))
+                return (false, $"Pasta TikaumBackup não encontrada no volume \"{NomeVolume(drive)}\".", []);
+
+            try
+            {
+                // AllDirectories cobre o layout atual (subpasta por dia) e o legado (soltos)
+                var backups = Directory.EnumerateFiles(raiz, "*.db", SearchOption.AllDirectories)
+                    .Select(f => new FileInfo(f))
+                    .Select(f => new BackupDisponivel(
+                        f.FullName, f.Name, f.LastWriteTime, f.Length))
+                    .OrderByDescending(b => b.Nome, StringComparer.Ordinal)
+                    .ThenByDescending(b => b.Modificado)
+                    .ToList();
+                return (true, "", backups);
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Erro ao listar backups do pen drive");
+                return (false, $"Erro ao listar backups do pen drive: {ex.Message}", []);
+            }
+        });
+
+    public Task<(bool ok, string mensagem)> CopiarBackupPenDriveAsync(string filePath) =>
+        Task.Run<(bool, string)>(() =>
+        {
+            var tempPath = CaminhoRestorePendente + ".part";
+            try
+            {
+                if (!File.Exists(filePath))
+                    return (false, "Arquivo de backup não encontrado no pen drive.");
+
+                ValidarArquivoSqlite(filePath);
+                Directory.CreateDirectory(DataDir);
+                File.Copy(filePath, tempPath, overwrite: true);
+                File.Move(tempPath, CaminhoRestorePendente, overwrite: true);
+                GravarRestorePendenteInfo("Pen drive", Path.GetFileName(filePath));
+
+                logger.LogInformation("Restore agendado a partir do pen drive: {Path}", filePath);
+                return (true, $"Backup {Path.GetFileName(filePath)} copiado. " +
+                              "Reinicie o sistema para completar a restauração.");
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Erro ao copiar backup do pen drive");
+                return (false, $"Erro ao copiar backup: {ex.Message}");
+            }
+            finally
+            {
+                if (File.Exists(tempPath)) File.Delete(tempPath);
+            }
+        });
+
+    private void GravarRestorePendenteInfo(string origem, string backup)
+    {
+        File.WriteAllText(RestorePendenteInfoPath,
+            JsonSerializer.Serialize(new RestoreInfo(origem, backup, DateTime.Now), _jsonOpts));
+    }
+
+    /// <summary>Barra cedo um arquivo que não é um banco SQLite (cabeçalho mágico).</summary>
+    private static void ValidarArquivoSqlite(string path)
+    {
+        Span<byte> header = stackalloc byte[16];
+        using var fs = File.OpenRead(path);
+        if (fs.Read(header) != 16 ||
+            !header.SequenceEqual("SQLite format 3\0"u8))
+        {
+            throw new InvalidOperationException(
+                "O arquivo selecionado não é um banco de dados SQLite válido.");
+        }
+    }
+
+    /// <summary>
+    /// Chamado pelo Program.cs no startup, ANTES das migrations e de abrir qualquer conexão.
+    /// Renomeia o banco atual para tikaum_pre_restore_TIMESTAMP.db (levando junto -wal/-shm,
+    /// que pertencem a ele — deixá-los para trás faria o SQLite aplicar um WAL alheio sobre
+    /// o banco restaurado) e promove tikaum_restore_pending.db a banco ativo. As migrations
+    /// que rodam em seguida atualizam o snapshot restaurado para o schema corrente.
+    /// </summary>
+    public (bool aplicado, string mensagem) AplicarRestorePendente()
+    {
+        if (!RestorePendente) return (false, "");
+
+        var dbPath = ResolverCaminhoDb();
+        var info = LerRestorePendenteInfo();
+        var preRestore = Path.Combine(DataDir,
+            $"tikaum_pre_restore_{DateTime.Now:yyyyMMddHHmmss}.db");
+
+        if (File.Exists(dbPath))
+        {
+            File.Move(dbPath, preRestore);
+            foreach (var sufixo in new[] { "-wal", "-shm" })
+                if (File.Exists(dbPath + sufixo))
+                    File.Move(dbPath + sufixo, preRestore + sufixo);
+        }
+        File.Move(CaminhoRestorePendente, dbPath);
+
+        if (File.Exists(RestorePendenteInfoPath)) File.Delete(RestorePendenteInfoPath);
+        File.WriteAllText(RestoreConcluidoInfoPath, JsonSerializer.Serialize(
+            new RestoreInfo(info?.Origem ?? "backup", info?.Backup ?? Path.GetFileName(dbPath),
+                DateTime.Now), _jsonOpts));
+
+        var mensagem = $"Banco restaurado de {info?.Origem ?? "backup"} ({info?.Backup ?? "?"}). " +
+                       $"Banco anterior preservado como {Path.GetFileName(preRestore)}.";
+        logger.LogWarning("RESTORE aplicado: {Mensagem}", mensagem);
+        return (true, mensagem);
     }
 }

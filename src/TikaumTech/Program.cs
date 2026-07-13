@@ -113,6 +113,43 @@ using (var scope = app.Services.CreateScope())
     // SQLite não cria o diretório sozinho — precisa existir antes de abrir a conexão
     Directory.CreateDirectory(dataDir);
 
+    // Restore pendente (agendado pela tela /backup) é aplicado AQUI, antes das migrations
+    // e de qualquer conexão: o banco atual vira tikaum_pre_restore_TIMESTAMP.db e o
+    // snapshot baixado assume como tikaum.db (TIKAUM_SPEC.md §9).
+    //
+    // Guarda de instância dupla: uma segunda instância só morre lá em app.Run() (porta
+    // ocupada) — tarde demais para o restore. Se outra instância está com o banco aberto,
+    // trocar os arquivos aqui daria exceção de arquivo em uso (Windows) ou trocaria o
+    // banco POR BAIXO da instância ativa (Linux). Porta já respondendo = deixa o restore
+    // pendente para o próximo start de verdade (verificado em teste real: sem a guarda,
+    // a segunda instância aplicava o restore com a primeira no ar).
+    var backupService = app.Services.GetRequiredService<BackupService>();
+    if (backupService.RestorePendente)
+    {
+        if (OutraInstanciaNoAr(app.Configuration["Urls"]))
+        {
+            app.Logger.LogWarning(
+                "Restauração pendente NÃO aplicada: já existe uma instância do TikaumTech em " +
+                "execução. Feche o TikaumTech por completo e abra de novo para completar a restauração.");
+        }
+        else
+        {
+            try
+            {
+                var (restoreAplicado, restoreMensagem) = backupService.AplicarRestorePendente();
+                if (restoreAplicado)
+                    app.Logger.LogWarning("{Mensagem}", restoreMensagem);
+            }
+            catch (Exception ex)
+            {
+                // Nunca impedir o app de subir por causa do restore: o banco atual continua
+                // em uso e a restauração segue pendente (o banner continua avisando).
+                app.Logger.LogError(ex,
+                    "Falha ao aplicar a restauração pendente — o banco atual permanece em uso.");
+            }
+        }
+    }
+
     db.Database.Migrate();
     await db.Database.ExecuteSqlRawAsync("PRAGMA journal_mode=WAL");
 
@@ -179,6 +216,23 @@ app.MapAdditionalIdentityEndpoints();
 if (!app.Environment.IsDevelopment())
 {
     app.Lifetime.ApplicationStarted.Register(() => AbrirNavegador(app.Logger, "http://localhost:5000"));
+}
+
+// Testa se a porta configurada já responde (outra instância no ar). Conexão recusada
+// ou timeout curto = porta livre. Usado só como guarda do restore pendente, acima.
+static bool OutraInstanciaNoAr(string? urls)
+{
+    try
+    {
+        var url = (urls ?? "http://localhost:5000").Split(';')[0].Trim();
+        var uri = new Uri(url.Replace("*", "localhost").Replace("+", "localhost"));
+        using var client = new System.Net.Sockets.TcpClient();
+        return client.ConnectAsync(uri.Host, uri.Port).Wait(500) && client.Connected;
+    }
+    catch
+    {
+        return false; // conexão recusada = ninguém escutando
+    }
 }
 
 // UseShellExecute só resolve URL→navegador no Windows; no Linux/macOS o equivalente

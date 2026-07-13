@@ -69,7 +69,9 @@
             else
                 await PessoaService.AtualizarAsync(_model);
 
-            MudDialog.Close();
+            // Devolve a pessoa salva (com Id preenchido na criação): o cadastro rápido
+            // durante a venda usa isso para selecionar o cliente recém-criado.
+            MudDialog.Close(DialogResult.Ok(_model));
         }
         catch (Exception ex)
         {

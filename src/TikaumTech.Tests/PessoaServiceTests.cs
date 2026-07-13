@@ -178,6 +178,58 @@ public class PessoaServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task CriarAsync_LancaExcecao_QuandoCpfDuplicado()
+    {
+        await _svc.CriarAsync(new Pessoa { Nome = "Marina", Cpf = "529.982.247-25" });
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            _svc.CriarAsync(new Pessoa { Nome = "Otavio", Cpf = "529.982.247-25" }));
+
+        // A mensagem aponta o cliente que já usa o CPF
+        Assert.Contains("Marina", ex.Message);
+        Assert.Equal(1, await _db.Pessoas.CountAsync());
+    }
+
+    [Fact]
+    public async Task AtualizarAsync_LancaExcecao_QuandoCpfDuplicado()
+    {
+        await _svc.CriarAsync(new Pessoa { Nome = "Paula", Cpf = "529.982.247-25" });
+        var pessoa = new Pessoa { Nome = "Rafael", Cpf = "111.444.777-35" };
+        await _svc.CriarAsync(pessoa);
+
+        pessoa.Cpf = "529.982.247-25";
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => _svc.AtualizarAsync(pessoa));
+        Assert.Contains("Paula", ex.Message);
+    }
+
+    [Fact]
+    public async Task AtualizarAsync_Persiste_QuandoMantemOProprioCpf()
+    {
+        // Editar sem trocar o CPF não pode acusar duplicidade contra o próprio registro
+        var pessoa = new Pessoa { Nome = "Sonia", Cpf = "529.982.247-25" };
+        await _svc.CriarAsync(pessoa);
+
+        pessoa.Telefone = "(11) 91234-5678";
+        await _svc.AtualizarAsync(pessoa);
+
+        var atualizada = await _db.Pessoas.FindAsync(pessoa.Id);
+        Assert.Equal("(11) 91234-5678", atualizada!.Telefone);
+        Assert.Equal("529.982.247-25", atualizada.Cpf);
+    }
+
+    [Fact]
+    public async Task CriarAsync_PermiteVariosClientesSemCpf()
+    {
+        // CPF é opcional: nulo/vazio não entra no índice único nem na checagem de duplicidade
+        await _svc.CriarAsync(new Pessoa { Nome = "Tiago", Cpf = null });
+        await _svc.CriarAsync(new Pessoa { Nome = "Ursula", Cpf = "" });
+        await _svc.CriarAsync(new Pessoa { Nome = "Vera", Cpf = null });
+
+        Assert.Equal(3, await _db.Pessoas.CountAsync());
+    }
+
+    [Fact]
     public async Task ConsultasDeLeitura_NaoRastreiamEntidadesNoContexto()
     {
         // Leituras de exibição não devem anexar entidades ao DbContext do circuito —

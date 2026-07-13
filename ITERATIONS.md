@@ -95,3 +95,90 @@ Para o histórico completo por rodada ver `STATUS.md`.
 **Arquivos alterados:** `install.bat` (inserção no início), `install.sh` (criado).
 **Arquivos não alterados:** `build_release.bat`, `start_linux.sh`, `stop_linux.sh`, projeto.
 **Build:** 0 warnings, 0 erros.
+
+---
+
+## Ciclo 7 — Cadastro Rápido, Instalador em Três Scripts, Restore e CPF Único (Rodada 39, 2026-07-11)
+
+**Objetivo:** quatro entregas do usuário — cadastro rápido de cliente na venda, separação
+build/install/update, restore de backup e unicidade de CPF.
+
+**Decisões:**
+- **CPF único:** checagem no `PessoaService` (mensagem com o nome do cliente que já usa o
+  CPF) + índice único parcial `ix_pessoas_cpf` via `migrationBuilder.Sql` com
+  `IF NOT EXISTS` (SQL exato pedido na tarefa; nulo/vazio fora do índice). Banco antigo com
+  duplicados: a migration falha no start por design — nunca deduplicar dados em silêncio.
+- **Cadastro rápido na venda:** item sentinela (`Id = -1`) devolvido pelo próprio
+  `SearchFunc` quando a busca não retorna nada — integra com o fluxo de seleção do
+  `MudAutocomplete` sem componente novo. `PessoaDialog` passou a fechar com
+  `DialogResult.Ok(pessoa)` para o chamador receber o cliente criado (compatível com os
+  chamadores antigos, que só checam `Canceled`).
+- **Restore em dois tempos:** a tela `/backup` só deixa `data/tikaum_restore_pending.db`
+  (+ `restore_pending.json` com origem/arquivo); a troca acontece no próximo start, antes
+  das migrations. `-wal`/`-shm` são renomeados junto com o banco antigo (WAL órfão seria
+  aplicado sobre o banco restaurado = corrupção). Download/cópia via `.part` + rename e
+  validação do cabeçalho mágico SQLite antes de virar pendente.
+- **Guarda de instância dupla no restore (achado de teste real):** a segunda instância só
+  morre em `app.Run()` (porta ocupada) — nos testes ela chegou a aplicar o restore com a
+  primeira instância no ar. `Program.cs` agora testa a porta configurada antes: se responde,
+  o restore fica pendente para o próximo start de verdade; exceções na aplicação do restore
+  também não derrubam o app.
+- **Listagem do Drive em uma busca só** (padrão de nome, sem descer pasta a pasta): o escopo
+  `drive.file` já limita a visão aos arquivos do app, e isso cobre backups legados soltos.
+- **Instalador em três scripts:** verificação/instalação do SDK movida para o
+  `build_release.bat` (único que compila; o publish é self-contained). `install.bat` virou
+  só-primeira-instalação (com aviso/confirmação se já existe) e trocou `xcopy /E` por
+  `robocopy /E /XD data config` — uma `data\` presente por engano na origem nunca mais
+  sobrescreve o banco do estúdio. `update.bat` novo: backup `tikaum_pre_update_AAAAMMDD.db`
+  antes de copiar, verificação de que o banco sobreviveu (senão restaura e aborta) e
+  `/R:3 /W:2` no robocopy (o padrão é ~1 milhão de tentativas — travaria para sempre num
+  arquivo em uso).
+
+**Arquivos alterados:** `PessoaService`, `ApplicationDbContext`, migration
+`AddCpfUniqueIndex`, `Vendas.razor`, `PessoaDialog.razor`, `BackupService`, `Backup.razor`,
+`BackupBanner.razor`, `Program.cs`, `install.bat`, `build_release.bat`, `update.bat` (novo),
+testes (`PessoaServiceTests` +4, `BackupServiceTests` +5).
+**Build:** 0 warnings, 0 erros. **Testes:** 109/109.
+**Verificação real:** app subiu no sandbox (login via curl, telas alteradas 200); restore
+aplicado num start de verdade (marcador sumiu, `pre_restore` criado, toast info gravada);
+guarda de instância dupla exercitada com duas instâncias reais.
+**Nota:** `STATUS.md` não existia mais no repositório (referenciado por `CLAUDE.md`/
+`ITERATIONS.md`) — recriado nesta rodada a partir do estado real do código. Causa raiz
+encontrada depois: `STATUS.md` está no `.gitignore` (bloco "controle de sessão") — ele
+nunca foi versionado e existia só no working tree de quem o mantinha.
+
+---
+
+## Ciclo 8 — Build e Deploy na Máquina do Dev (Rodada 40, 2026-07-11)
+
+**Objetivo:** parar de compilar/preparar o deploy na máquina do estúdio. Causa raiz: a
+máquina de desenvolvimento é Linux e o único caminho de publicação era o
+`build_release.bat` (Windows) — na prática o repo era levado à máquina do estúdio, que
+instalava SDK e compilava.
+
+**Decisões:**
+- **`build_release.sh` (novo):** o .NET faz cross-publish **win-x64 self-contained a
+  partir do Linux** — verificado em build real neste sandbox (394 arquivos, apphost
+  `TikaumTech.exe` com o `icon.ico` embutido — conferido byte a byte no PE). A máquina do
+  estúdio passa a receber só o pacote pronto.
+- **CRLF nos `.bat` garantido pelo script** (`sed` remove CR e recoloca, idempotente): o
+  working tree Linux costuma ter LF e `cmd.exe` quebra com LF puro (continuações `^`);
+  não dá para depender só do `.gitattributes` (`eol=crlf`), que atua no checkout, não em
+  cópias diretas do working tree.
+- **Deploy opcional no mesmo passo:** argumento com diretório de destino (ex.: pen drive
+  montado) copia o pacote como `TikaumTech_AAAA-MM-DD/` + `sync`.
+- **`--linux` gera `publish-linux/` com `install.sh`** — o instalador Linux (Rodada 38)
+  já referenciava um `build_release.sh` que não existia; agora existe.
+- Detecção de ambiente igual à dos scripts existentes (dotnet no PATH → `~/.dotnet` →
+  instala em `~/.dotnet`); sem libicu, o modo invariante é ativado **só para o processo
+  de build** (o app publicado roda com ICU completo no destino). Supressão da mensagem
+  "Aborted" do teste de ICU exige forçar fork no `bash -c` (`; exit $?`) — com comando
+  único o bash faz exec e o sinal aparece no stderr do script.
+
+**Arquivos:** `build_release.sh` (novo), `.gitignore` (`publish-linux/`), mensagens de
+erro de `install.bat`/`update.bat`, `TIKAUM_SPEC.md` §10, `README.md`, `CLAUDE.md`.
+**Sem mudança no lado do estúdio:** `install.bat`/`update.bat` continuam os mesmos — uma
+nova implantação sobre a instalação existente não muda em nada.
+**Verificação real:** `./build_release.sh` executado no sandbox (publish win-x64 completo,
+`.bat` conferidos em CRLF via `od`, ícone presente no `.exe`); variante `--linux` e cópia
+para destino (pen drive simulado) também exercitadas.

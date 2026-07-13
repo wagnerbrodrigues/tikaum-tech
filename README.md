@@ -98,29 +98,42 @@ produção do estúdio. Detalhes em `TIKAUM_SPEC.md` §11.
 
 ## Instalação em produção (Windows)
 
-```bat
-REM 1. No computador do desenvolvedor:
-build_release.bat
-REM    → gera a pasta publish\ já com o install.bat dentro
+Build e preparação do pacote acontecem **na máquina do desenvolvedor** (a única que
+precisa do .NET SDK — os scripts verificam e instalam se faltar); a máquina do estúdio
+**nunca compila**: só recebe o pacote pronto e executa o instalador/atualizador.
 
-REM 2. Copie a pasta publish\ para o computador do estúdio (pen drive, rede)
+```bash
+# 1. Na máquina do desenvolvedor:
 
-REM 3. No computador do estúdio — clique direito > Executar como administrador:
-publish\install.bat
+# Linux (o .NET publica win-x64 a partir do Linux — pacote idêntico):
+./build_release.sh                        # gera publish/ com install.bat e update.bat
+./build_release.sh /media/user/PENDRIVE   # idem, e já copia o pacote para o pen drive
+                                          #   (deploy: TikaumTech_AAAA-MM-DD/)
+
+# ou Windows:
+#   build_release.bat                     → gera publish\ com os dois .bat dentro
 ```
 
-O `install.bat` faz automaticamente:
+```bat
+REM 2. Leve o pacote ao computador do estúdio (pen drive, rede)
 
-1. Para a instância anterior e apaga a instalação antiga (**preservando `data\`** —
-   banco e backups — **e `config\`** — credenciais do Google Drive)
-2. Copia os arquivos para `C:\TikaumTech\`
-3. Coleta a senha do administrador (input mascarado; vale para o usuário `admin`)
-4. Adiciona `tikaum-tech.local` ao arquivo hosts (endereço alternativo)
-5. Cria tarefa no Agendador de Tarefas — o sistema inicia junto com o logon do Windows
-6. Cria atalho na área de trabalho e abre o app + navegador em `http://localhost:5000`
+REM 3. No computador do estúdio — clique direito > Executar como administrador:
+install.bat   REM PRIMEIRA instalação
+update.bat    REM ATUALIZAÇÕES (preserva todos os dados)
+```
 
-Atualizar o sistema = repetir os três passos. Dados, backups e conexão com o Google
-Drive sobrevivem à reinstalação.
+O `install.bat` (primeira instalação) faz automaticamente:
+
+1. Copia os arquivos para `C:\TikaumTech\` (nunca inclui `data\`/`config\` da origem)
+2. Coleta a senha do administrador (input mascarado; vale para o usuário `admin`)
+3. Adiciona `tikaum-tech.local` ao arquivo hosts (endereço alternativo)
+4. Cria tarefa no Agendador de Tarefas — o sistema inicia junto com o logon do Windows
+5. Cria atalho na área de trabalho e abre o app + navegador em `http://localhost:5000`
+
+Se já houver instalação, o `install.bat` avisa e sugere o `update.bat`, que atualiza
+preservando tudo: para o app, faz backup do banco (`data\tikaum_pre_update_AAAAMMDD.db`)
+antes de copiar, nunca toca em `data\` (banco e backups) nem `config\` (credenciais do
+Google Drive), confere que o banco sobreviveu à cópia e reinicia o sistema.
 
 ## Rodando no Linux
 
@@ -133,8 +146,8 @@ Drive sobrevivem à reinstalação.
 Ou publique um binário fixo e execute direto:
 
 ```bash
-dotnet publish src/TikaumTech -c Release -r linux-x64 --self-contained -o publish-linux/
-./publish-linux/TikaumTech
+./build_release.sh --linux        # gera publish-linux/ (com install.sh dentro)
+./publish-linux/TikaumTech        # executar direto, ou: sudo ./publish-linux/install.sh
 ```
 
 **Pen drive de backup no Linux:** basta montar o volume (clicar nele no gerenciador de
@@ -219,8 +232,17 @@ Snapshot enviado para a pasta `TikaumBackup` no Drive da conta configurada
 A autorização gera um token OAuth de escopo mínimo (`drive.file` — o app só enxerga
 arquivos criados por ele), gravado **criptografado** em `config/google_token_*.enc`
 via ASP.NET Data Protection; no Windows, as chaves (`config/keys/`) são protegidas
-adicionalmente com DPAPI, vinculadas à conta do Windows da máquina. O `install.bat`
-preserva a pasta `config\` — não é preciso reconectar após atualizar o sistema.
+adicionalmente com DPAPI, vinculadas à conta do Windows da máquina. O `install.bat` e o
+`update.bat` preservam a pasta `config\` — não é preciso reconectar após atualizar.
+
+### Restaurar um backup
+
+Na tela **Backup**, seção **Restaurar Backup**: escolha a origem (Google Drive ou pen
+drive), selecione o arquivo na lista (mais recente primeiro) e confirme — o snapshot fica
+agendado e a troca acontece no **próximo início do sistema** (feche e abra o TikaumTech).
+O banco substituído é preservado como `data/tikaum_pre_restore_[data].db`; um toast
+confirma a restauração após o reinício. Atenção: restaurar substitui todos os dados
+atuais — faça um backup antes (há um botão para isso na própria seção).
 
 ---
 
@@ -297,8 +319,10 @@ tikaum-tech/
 │   └── TikaumTech.Tests/       # Testes automatizados
 ├── start_linux.sh              # Iniciar no Linux (segundo plano + navegador)
 ├── stop_linux.sh               # Parar a instância iniciada pelo start_linux.sh
-├── build_release.bat           # Publicar para Windows (gera publish\ + install.bat)
-├── install.bat                 # Instalador standalone (roda de dentro de publish\)
+├── build_release.sh            # Dev Linux: publica win-x64 (ou --linux) e monta o pacote
+├── build_release.bat           # Dev Windows: idem (gera publish\ + install/update.bat)
+├── install.bat                 # Estúdio: PRIMEIRA instalação (roda de dentro do pacote)
+├── update.bat                  # Estúdio: ATUALIZAÇÃO preservando dados (idem)
 ├── TIKAUM_SPEC.md              # Especificação completa (fonte da verdade)
 ├── STATUS.md                   # Estado atual do desenvolvimento
 └── CLAUDE.md                   # Decisões e convenções para o assistente de IA
@@ -375,9 +399,10 @@ O volume precisa estar **montado** (clicar nele no gerenciador de arquivos basta
 A detecção usa `/media/<usuário>/` e `/run/media/<usuário>/`.
 
 **Instalei uma versão nova e os dados sumiram?**
-Não somem: o `install.bat` preserva `data\` (banco + backups) e `config\`
-(credenciais do Drive) em toda reinstalação. Se algo parecer faltando, confira
-`C:\TikaumTech\data\`.
+Não somem: tanto o `update.bat` (caminho recomendado — ainda faz backup
+`tikaum_pre_update_AAAAMMDD.db` antes de copiar) quanto o `install.bat` preservam
+`data\` (banco + backups) e `config\` (credenciais do Drive). Se algo parecer
+faltando, confira `C:\TikaumTech\data\`.
 
 ---
 

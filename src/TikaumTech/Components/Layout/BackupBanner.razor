@@ -1,6 +1,7 @@
 @rendermode InteractiveServer
 @implements IDisposable
 @inject BackupService BackupService
+@inject ISnackbar Snackbar
 
 @* Substitui o BackupWarning (toast que sobrepunha conteúdo): banner no fluxo do documento,
    entre topbar e conteúdo (TIKAUM_SPEC.md §6). Ilha interativa própria pelo mesmo motivo do
@@ -11,6 +12,18 @@
 @if (AlgumVisivel)
 {
     <div class="backup-banner-area">
+        @if (_mostrarRestore && !_fechouRestore)
+        {
+            <div class="backup-alert backup-alert--warning">
+                <MudIcon Icon="@Icons.Material.Filled.SettingsBackupRestore" Class="backup-alert__icon" aria-hidden="true" />
+                <span class="backup-alert__text">
+                    Restauração de backup pendente. Reinicie o sistema (feche e abra o TikaumTech)
+                    para completar a restauração.
+                </span>
+                <a href="/backup" class="backup-alert__link">Ver detalhes →</a>
+                <span class="backup-alert__close" title="Fechar aviso" @onclick="() => _fechouRestore = true">✕</span>
+            </div>
+        }
         @if (_mostrarPenDrive && !_fechouPenDrive)
         {
             <div class="backup-alert backup-alert--danger">
@@ -58,16 +71,19 @@
     private bool _mostrarPenDrive;
     private bool _mostrarDrive;
     private bool _mostrarDriveErro;
+    private bool _mostrarRestore;
     private bool _fechouPenDrive;
     private bool _fechouDrive;
     private bool _fechouDriveErro;
+    private bool _fechouRestore;
     private string _volumeConfigurado = "";
     private Timer? _timer;
 
     private bool AlgumVisivel =>
         (_mostrarPenDrive && !_fechouPenDrive) ||
         (_mostrarDrive && !_fechouDrive) ||
-        (_mostrarDriveErro && !_fechouDriveErro);
+        (_mostrarDriveErro && !_fechouDriveErro) ||
+        (_mostrarRestore && !_fechouRestore);
 
     protected override void OnInitialized()
     {
@@ -79,12 +95,27 @@
         }), null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
     }
 
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (!firstRender) return;
+        // Toast único pós-restauração: o startup que aplicou o restore gravou
+        // restore_done.json; o primeiro banner renderizado depois disso avisa e consome.
+        var concluido = BackupService.LerRestoreConcluidoInfo();
+        if (concluido is not null)
+        {
+            Snackbar.Add($"Banco restaurado com sucesso de {concluido.Origem} ({concluido.Backup}).",
+                Severity.Success);
+            BackupService.LimparRestoreConcluidoInfo();
+        }
+    }
+
     private void Atualizar()
     {
         _volumeConfigurado = BackupService.CarregarConfig().PenDriveVolumeName;
         _mostrarPenDrive = !BackupService.PenDriveConectado;
         _mostrarDrive = !BackupService.GoogleDriveConfigurado;
         _mostrarDriveErro = BackupService.GoogleDriveConfigurado && BackupService.GoogleDriveComErro;
+        _mostrarRestore = BackupService.RestorePendente;
     }
 
     public void Dispose() => _timer?.Dispose();

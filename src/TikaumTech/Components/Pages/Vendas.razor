@@ -9,6 +9,7 @@
 @inject VendaService VendaService
 @inject UsuarioService UsuarioService
 @inject ISnackbar Snackbar
+@inject IDialogService DialogService
 @inject NavigationManager Nav
 
 <PageTitle>Nova Venda — Tikaum-Tech</PageTitle>
@@ -24,18 +25,29 @@
                 <MudAutocomplete T="Pessoa"
                                  Label="Cliente"
                                  SearchFunc="SearchPessoaAsync"
-                                 @bind-Value="_pessoaSelecionada"
+                                 Value="_pessoaSelecionada"
+                                 ValueChanged="PessoaSelecionadaAsync"
                                  ToStringFunc="@(p => p?.Nome ?? "")"
                                  ResetValueOnEmptyText="true"
                                  CoerceText="false"
                                  FullWidth="true">
                     <ItemTemplate Context="p">
-                        @p.Nome
-                        @if (p.Identificacao.Length > 0)
+                        @if (p.Id == NovoClienteId)
                         {
-                            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block tk-mono">
-                                @p.Identificacao
-                            </MudText>
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                                <MudIcon Icon="@Icons.Material.Filled.PersonAdd" Size="Size.Small" Color="Color.Secondary" />
+                                <MudText Color="Color.Secondary">Cadastrar "<strong>@p.Nome</strong>" como novo cliente</MudText>
+                            </MudStack>
+                        }
+                        else
+                        {
+                            @p.Nome
+                            @if (p.Identificacao.Length > 0)
+                            {
+                                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block tk-mono">
+                                    @p.Identificacao
+                                </MudText>
+                            }
                         }
                     </ItemTemplate>
                 </MudAutocomplete>
@@ -261,8 +273,40 @@
     }
 
     // Autocomplete callbacks
-    private async Task<IEnumerable<Pessoa>> SearchPessoaAsync(string value, CancellationToken ct) =>
-        await PessoaService.ListarAsync(value);
+
+    // Id sentinela do item "+ Cadastrar ... como novo cliente" — nunca colide com o banco
+    // (Ids reais começam em 1).
+    private const int NovoClienteId = -1;
+
+    private async Task<IEnumerable<Pessoa>> SearchPessoaAsync(string value, CancellationToken ct)
+    {
+        var resultados = await PessoaService.ListarAsync(value);
+        // Busca sem resultado: o próprio dropdown oferece o cadastro rápido com o texto digitado
+        if (resultados.Count == 0 && !string.IsNullOrWhiteSpace(value))
+            return [new Pessoa { Id = NovoClienteId, Nome = value.Trim() }];
+        return resultados;
+    }
+
+    private async Task PessoaSelecionadaAsync(Pessoa? pessoa)
+    {
+        if (pessoa is null || pessoa.Id != NovoClienteId)
+        {
+            _pessoaSelecionada = pessoa;
+            return;
+        }
+
+        // Item de cadastro rápido: abre o mesmo dialog de /pessoas com o nome já preenchido.
+        // O carrinho não é tocado — só o campo de cliente muda; cancelar volta sem seleção.
+        _pessoaSelecionada = null;
+        var parameters = new DialogParameters<PessoaDialog>
+        {
+            { x => x.Pessoa, new Pessoa { Nome = pessoa.Nome } },
+        };
+        var dialog = await DialogService.ShowAsync<PessoaDialog>("Novo Cliente", parameters);
+        var result = await dialog.Result;
+        if (result is { Canceled: false, Data: Pessoa criada })
+            _pessoaSelecionada = criada;
+    }
 
     private async Task<IEnumerable<Produto>> SearchProdutoAsync(string value, CancellationToken ct) =>
         await ProdutoService.ListarAsync(value, apenasAtivos: true);

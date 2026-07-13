@@ -32,6 +32,7 @@ drive/
 
 # Output do publish e instalador gerado
 publish/
+publish-linux/
 installer-output/
 
 # Log do start_linux.sh (execução em segundo plano)

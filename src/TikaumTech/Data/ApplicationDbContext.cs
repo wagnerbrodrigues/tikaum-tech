@@ -27,6 +27,11 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
             e.Property(p => p.Cpf).HasColumnName("cpf");
             e.Property(p => p.Observacoes).HasColumnName("observacoes");
             e.Property(p => p.CriadoEm).HasColumnName("criado_em");
+            // CPF é único quando preenchido (índice parcial — decisão de 2026-07-11);
+            // nulo/vazio fica de fora do índice, então clientes sem CPF continuam ilimitados.
+            e.HasIndex(p => p.Cpf).IsUnique()
+                .HasDatabaseName("ix_pessoas_cpf")
+                .HasFilter("cpf IS NOT NULL AND cpf != ''");
             e.Ignore(p => p.Identificacao);
         });
 

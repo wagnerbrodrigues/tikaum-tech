@@ -3,6 +3,7 @@
 @rendermode InteractiveServer
 @inject BackupService BackupService
 @inject ISnackbar Snackbar
+@inject IDialogService DialogService
 
 <PageTitle>Backup — Tikaum-Tech</PageTitle>
 
@@ -228,6 +229,105 @@
     </MudButton>
 </MudPaper>
 
+<!-- Restaurar Backup (TIKAUM_SPEC.md §9 — decisão de 2026-07-11) -->
+<MudPaper Class="pa-4 mb-3" Elevation="1">
+    <MudText Typo="Typo.subtitle1" Class="mb-2">Restaurar Backup</MudText>
+
+    @if (_restorePendente)
+    {
+        <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-3">
+            Restauração pendente: <strong>@(_restoreInfo?.Backup ?? "backup selecionado")</strong>
+            (origem: @(_restoreInfo?.Origem ?? "—")).
+            <strong>Reinicie o sistema</strong> (feche e abra o TikaumTech) para completar a restauração.
+        </MudAlert>
+        <MudButton Variant="Variant.Outlined" Color="Color.Error" Size="Size.Small"
+                   StartIcon="@Icons.Material.Filled.Cancel"
+                   OnClick="CancelarRestore">
+            Cancelar restauração pendente
+        </MudButton>
+    }
+    else
+    {
+        <MudAlert Severity="Severity.Error" Class="mb-3">
+            <strong>ATENÇÃO:</strong> restaurar um backup substituirá todos os dados atuais.
+            Esta ação não pode ser desfeita. Recomendamos fazer um backup do estado atual
+            antes de continuar.
+        </MudAlert>
+
+        <MudStack Row="true" Spacing="2" Class="mb-3" Wrap="Wrap.Wrap">
+            <MudButton Variant="Variant.Outlined" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Backup"
+                       Disabled="_restoreOcupado"
+                       OnClick="BackupAntesDeRestaurarAsync">
+                Fazer backup agora antes de restaurar
+            </MudButton>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Cloud"
+                       Disabled="@(_restoreOcupado || !_gdriveConectado)"
+                       OnClick="ListarBackupsDriveAsync">
+                Listar backups do Google Drive
+            </MudButton>
+            <MudButton Variant="Variant.Filled" Color="Color.Secondary"
+                       StartIcon="@Icons.Material.Filled.Usb"
+                       Disabled="@(_restoreOcupado || !_penDriveConectado)"
+                       OnClick="ListarBackupsPenDriveAsync">
+                Listar backups do pen drive
+            </MudButton>
+        </MudStack>
+
+        @if (_restoreOcupado)
+        {
+            <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="mb-1" />
+            <MudText Typo="Typo.caption">@_restoreStatus</MudText>
+        }
+        else if (_backupsDisponiveis is not null)
+        {
+            @if (_backupsDisponiveis.Count == 0)
+            {
+                <MudAlert Severity="Severity.Info" Dense="true">
+                    Nenhum backup encontrado em @_origemListada.
+                </MudAlert>
+            }
+            else
+            {
+                <MudText Typo="Typo.body2" Class="mb-2">
+                    Backups disponíveis em <strong>@_origemListada</strong> (do mais recente
+                    para o mais antigo):
+                </MudText>
+                <MudSimpleTable Dense="true" Hover="true" Style="overflow-x:auto">
+                    <thead>
+                        <tr>
+                            <th>Arquivo</th>
+                            <th style="width:150px">Data</th>
+                            <th style="width:110px;text-align:right">Tamanho</th>
+                            <th style="width:130px"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var backup in _backupsDisponiveis)
+                        {
+                            <tr>
+                                <td class="tk-mono">@backup.Nome</td>
+                                <td>@(backup.Modificado?.ToString("dd/MM/yyyy HH:mm") ?? "—")</td>
+                                <td style="text-align:right">
+                                    @(backup.TamanhoBytes is long tamanho ? FormatBytes(tamanho) : "—")
+                                </td>
+                                <td style="text-align:right">
+                                    <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Error"
+                                               StartIcon="@Icons.Material.Filled.SettingsBackupRestore"
+                                               OnClick="@(() => ConfirmarRestoreAsync(backup))">
+                                        Restaurar
+                                    </MudButton>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </MudSimpleTable>
+            }
+        }
+    }
+</MudPaper>
+
 <!-- Informações -->
 <MudPaper Class="pa-4" Elevation="1">
     <MudText Typo="Typo.subtitle1" Class="mb-2">Como funciona o backup</MudText>
@@ -252,6 +352,10 @@
         <MudListItem T="string" Icon="@Icons.Material.Filled.FiberManualRecord">
             Os arquivos ficam em <code>[PenDrive]\TikaumBackup\tikaum_YYYY-MM-DD.db</code>.
         </MudListItem>
+        <MudListItem T="string" Icon="@Icons.Material.Filled.FiberManualRecord">
+            A restauração é aplicada no próximo início do sistema; o banco substituído fica
+            preservado como <code>tikaum_pre_restore_[data].db</code> na pasta <code>data/</code>.
+        </MudListItem>
     </MudList>
 </MudPaper>
 
@@ -266,6 +370,15 @@
     private bool _gdriveCredencial;
     private bool _gdriveConectado;
     private bool _gdriveOcupado;
+
+    // Restore (TIKAUM_SPEC.md §9)
+    private bool _restorePendente;
+    private RestoreInfo? _restoreInfo;
+    private bool _restoreOcupado;
+    private string _restoreStatus = "";
+    private List<BackupDisponivel>? _backupsDisponiveis;
+    private string _origemListada = "";
+    private bool _origemEhDrive;
 
     protected override void OnInitialized()
     {
@@ -282,6 +395,8 @@
         _volumeSelecionado = _config.PenDriveVolumeName;
         _gdriveCredencial = BackupService.GoogleDriveCredencialPresente;
         _gdriveConectado = BackupService.GoogleDriveConfigurado;
+        _restorePendente = BackupService.RestorePendente;
+        _restoreInfo = BackupService.LerRestorePendenteInfo();
     }
 
     private async Task ConectarGoogleDriveAsync()
@@ -337,6 +452,100 @@
         BackupService.SalvarVolumePenDrive(_volumeSelecionado);
         Recarregar();
         Snackbar.Add($"Pen drive configurado: {_volumeSelecionado}", Severity.Success);
+    }
+
+    // --- Restore ---
+
+    private async Task BackupAntesDeRestaurarAsync()
+    {
+        _restoreOcupado = true;
+        _restoreStatus = "Fazendo backup do estado atual...";
+        var algumDestino = false;
+
+        if (BackupService.PenDriveConectado)
+        {
+            algumDestino = true;
+            var (ok, mensagem) = await BackupService.FazerBackupPenDriveAsync();
+            Snackbar.Add(mensagem, ok ? Severity.Success : Severity.Error);
+        }
+        if (BackupService.GoogleDriveConfigurado)
+        {
+            algumDestino = true;
+            var (ok, mensagem) = await BackupService.FazerBackupGoogleDriveAsync();
+            Snackbar.Add(mensagem, ok ? Severity.Success : Severity.Error);
+        }
+        if (!algumDestino)
+            Snackbar.Add("Nenhum destino de backup disponível — conecte o pen drive ou o Google Drive.",
+                Severity.Warning);
+
+        _status = BackupService.CarregarStatus();
+        _restoreOcupado = false;
+    }
+
+    private async Task ListarBackupsDriveAsync()
+    {
+        _restoreOcupado = true;
+        _restoreStatus = "Listando backups do Google Drive...";
+        StateHasChanged();
+
+        var (ok, mensagem, backups) = await BackupService.ListarBackupsGoogleDriveAsync();
+        if (!ok) Snackbar.Add(mensagem, Severity.Error);
+        _backupsDisponiveis = ok ? backups : null;
+        _origemListada = "Google Drive";
+        _origemEhDrive = true;
+        _restoreOcupado = false;
+    }
+
+    private async Task ListarBackupsPenDriveAsync()
+    {
+        _restoreOcupado = true;
+        _restoreStatus = "Listando backups do pen drive...";
+        StateHasChanged();
+
+        var (ok, mensagem, backups) = await BackupService.ListarBackupsPenDriveAsync();
+        if (!ok) Snackbar.Add(mensagem, Severity.Error);
+        _backupsDisponiveis = ok ? backups : null;
+        _origemListada = "pen drive";
+        _origemEhDrive = false;
+        _restoreOcupado = false;
+    }
+
+    private async Task ConfirmarRestoreAsync(BackupDisponivel backup)
+    {
+        var parameters = new DialogParameters<ConfirmDialog>
+        {
+            { x => x.Message, $"ATENÇÃO: restaurar o backup {backup.Nome} ({_origemListada}) " +
+                              "substituirá todos os dados atuais. Esta ação não pode ser desfeita. " +
+                              "Recomendamos fazer um backup do estado atual antes de continuar. Continuar?" },
+            { x => x.ConfirmText, "Restaurar" },
+        };
+        var dialog = await DialogService.ShowAsync<ConfirmDialog>("Restaurar backup", parameters);
+        if ((await dialog.Result)!.Canceled) return;
+
+        _restoreOcupado = true;
+        _restoreStatus = _origemEhDrive
+            ? $"Baixando {backup.Nome} do Google Drive..."
+            : $"Copiando {backup.Nome} do pen drive...";
+        StateHasChanged();
+
+        var (ok, mensagem) = _origemEhDrive
+            ? await BackupService.BaixarBackupGoogleDriveAsync(backup.Id)
+            : await BackupService.CopiarBackupPenDriveAsync(backup.Id);
+        Snackbar.Add(mensagem, ok ? Severity.Success : Severity.Error);
+
+        _restoreOcupado = false;
+        if (ok)
+        {
+            _backupsDisponiveis = null;
+            Recarregar();
+        }
+    }
+
+    private void CancelarRestore()
+    {
+        var (ok, mensagem) = BackupService.CancelarRestorePendente();
+        Snackbar.Add(mensagem, ok ? Severity.Info : Severity.Warning);
+        Recarregar();
     }
 
     private static string FormatBytes(long bytes)

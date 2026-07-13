@@ -130,6 +130,104 @@ public class BackupServiceTests : IDisposable
         Assert.Contains("Conectar", mensagem);
     }
 
+    // --- Restore (TIKAUM_SPEC.md §9, 2026-07-11) ---
+
+    private static readonly byte[] _sqliteHeader = "SQLite format 3\0"u8.ToArray();
+
+    private string CriarArquivoSqliteFake(string caminho, string marcador)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(caminho)!);
+        File.WriteAllBytes(caminho, [.. _sqliteHeader, .. System.Text.Encoding.ASCII.GetBytes(marcador)]);
+        return caminho;
+    }
+
+    [Fact]
+    public async Task CopiarBackupPenDrive_AgendaRestoreComInfoECancelamentoLimpa()
+    {
+        var origem = CriarArquivoSqliteFake(Path.Combine(_tempDir, "pen", "tikaum_2026-07-01.db"), "backup");
+
+        var (ok, mensagem) = await _svc.CopiarBackupPenDriveAsync(origem);
+
+        Assert.True(ok);
+        Assert.Contains("Reinicie o sistema", mensagem);
+        Assert.True(_svc.RestorePendente);
+        var info = _svc.LerRestorePendenteInfo();
+        Assert.NotNull(info);
+        Assert.Equal("Pen drive", info!.Origem);
+        Assert.Equal("tikaum_2026-07-01.db", info.Backup);
+
+        var (cancelou, _) = _svc.CancelarRestorePendente();
+        Assert.True(cancelou);
+        Assert.False(_svc.RestorePendente);
+        Assert.Null(_svc.LerRestorePendenteInfo());
+    }
+
+    [Fact]
+    public async Task CopiarBackupPenDrive_RejeitaArquivoQueNaoESqlite()
+    {
+        var origem = Path.Combine(_tempDir, "pen", "nao_e_banco.db");
+        Directory.CreateDirectory(Path.GetDirectoryName(origem)!);
+        File.WriteAllText(origem, "isto é um txt disfarçado");
+
+        var (ok, mensagem) = await _svc.CopiarBackupPenDriveAsync(origem);
+
+        Assert.False(ok);
+        Assert.Contains("não é um banco de dados SQLite válido", mensagem);
+        Assert.False(_svc.RestorePendente);
+    }
+
+    [Fact]
+    public async Task AplicarRestorePendente_PromovePendingEPreservaBancoAnteriorComWalShm()
+    {
+        var dbPath = Path.Combine(_tempDir, "tikaum.db");
+        CriarArquivoSqliteFake(dbPath, "banco-atual");
+        File.WriteAllText(dbPath + "-wal", "wal-do-banco-atual");
+        File.WriteAllText(dbPath + "-shm", "shm-do-banco-atual");
+        var origem = CriarArquivoSqliteFake(Path.Combine(_tempDir, "pen", "tikaum_2026-06-15.db"), "banco-restaurado");
+        await _svc.CopiarBackupPenDriveAsync(origem);
+
+        var (aplicado, mensagem) = _svc.AplicarRestorePendente();
+
+        Assert.True(aplicado);
+        Assert.Contains("tikaum_pre_restore_", mensagem);
+        // O snapshot virou o banco ativo…
+        Assert.Contains("banco-restaurado", File.ReadAllText(dbPath));
+        Assert.False(_svc.RestorePendente);
+        // …o banco anterior sobreviveu como pre_restore, levando -wal/-shm junto
+        // (um WAL órfão seria aplicado pelo SQLite sobre o banco restaurado — corrupção)
+        var preRestore = Assert.Single(Directory.GetFiles(_tempDir, "tikaum_pre_restore_*.db"));
+        Assert.Contains("banco-atual", File.ReadAllText(preRestore));
+        Assert.True(File.Exists(preRestore + "-wal"));
+        Assert.True(File.Exists(preRestore + "-shm"));
+        Assert.False(File.Exists(dbPath + "-wal"));
+        // Info pendente virou "concluído" (consumida pelo toast do BackupBanner)
+        Assert.Null(_svc.LerRestorePendenteInfo());
+        var concluido = _svc.LerRestoreConcluidoInfo();
+        Assert.NotNull(concluido);
+        Assert.Equal("Pen drive", concluido!.Origem);
+        _svc.LimparRestoreConcluidoInfo();
+        Assert.Null(_svc.LerRestoreConcluidoInfo());
+    }
+
+    [Fact]
+    public void AplicarRestorePendente_SemPendencia_NaoFazNada()
+    {
+        var (aplicado, _) = _svc.AplicarRestorePendente();
+
+        Assert.False(aplicado);
+        Assert.Empty(Directory.GetFiles(_tempDir, "tikaum_pre_restore_*.db"));
+    }
+
+    [Fact]
+    public async Task ListarBackupsPenDrive_SemPenDriveConfigurado_FalhaComMensagem()
+    {
+        var (ok, mensagem, backups) = await _svc.ListarBackupsPenDriveAsync();
+
+        Assert.False(ok);
+        Assert.Contains("Pen drive", mensagem);
+        Assert.Empty(backups);
+    }
+
     // --- EncryptedFileDataStore ---
 
     [Fact]

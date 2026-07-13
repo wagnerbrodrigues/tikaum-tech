@@ -40,17 +40,35 @@ public class PessoaService(ApplicationDbContext db)
 
     public async Task CriarAsync(Pessoa pessoa)
     {
-        if (!CpfValidador.EhValido(pessoa.Cpf))
-            throw new InvalidOperationException("CPF inválido. Verifique o número digitado.");
+        await ValidarCpfAsync(pessoa);
         pessoa.CriadoEm = DateTime.Now;
         db.Pessoas.Add(pessoa);
         await db.SaveChangesAsync();
     }
 
-    public async Task AtualizarAsync(Pessoa pessoa)
+    /// <summary>
+    /// CPF: dígitos verificadores quando preenchido + unicidade entre clientes (nomes iguais
+    /// são permitidos; CPF igual não — TIKAUM_SPEC.md §5). A comparação exclui o próprio
+    /// registro (edição mantém o próprio CPF) e ignora nulo/vazio, espelhando o índice único
+    /// parcial ix_pessoas_cpf do banco — a checagem aqui existe para a mensagem amigável
+    /// (com o nome do outro cliente); o índice é a defesa final contra corrida.
+    /// </summary>
+    private async Task ValidarCpfAsync(Pessoa pessoa)
     {
         if (!CpfValidador.EhValido(pessoa.Cpf))
             throw new InvalidOperationException("CPF inválido. Verifique o número digitado.");
+        if (string.IsNullOrWhiteSpace(pessoa.Cpf)) return;
+
+        var duplicado = await db.Pessoas.AsNoTracking()
+            .FirstOrDefaultAsync(p => p.Id != pessoa.Id && p.Cpf == pessoa.Cpf);
+        if (duplicado is not null)
+            throw new InvalidOperationException(
+                $"Este CPF já está cadastrado para o cliente {duplicado.Nome}.");
+    }
+
+    public async Task AtualizarAsync(Pessoa pessoa)
+    {
+        await ValidarCpfAsync(pessoa);
         // O diálogo de edição trabalha numa CÓPIA da entidade (para Cancelar não sujar a
         // listagem), e no circuito interativo o DbContext é compartilhado — a instância
         // original da listagem continua rastreada. Update(cópia) lançava "another instance

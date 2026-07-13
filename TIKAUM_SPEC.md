@@ -84,7 +84,7 @@ Schema preservado do legado Python. Migrations EF Core geradas sobre o banco SQL
 | Nome | string | obrigatório |
 | DataNascimento | DateTime, nullable | coluna `data_nascimento`; opcional |
 | Telefone | string | opcional — **exibido como "Celular" na UI** (coluna mantém o nome `telefone`); campo com **máscara** `(00) 0000-0000`/`(00) 00000-0000` (muda para 9 dígitos quando o número após o DDD começa com 9) — o valor é gravado já formatado. Implementação em `TelefoneMascara.Criar()` (correção de 2026-07-08: o `MultiMask` do MudBlazor casa o regex das opções contra o texto **já formatado**, com parênteses — o regex antigo `^\d{2}9` nunca ativava a máscara de 9 dígitos e o último dígito do celular era descartado) |
-| Cpf | string | coluna `cpf`; opcional — usado para **distinguir homônimos** (aparece na busca e nos autocompletes de cliente); com **máscara** `000.000.000-00` e **validado** quando preenchido (revisão 2026-07-05, abaixo) |
+| Cpf | string | coluna `cpf`; opcional — usado para **distinguir homônimos** (aparece na busca e nos autocompletes de cliente); com **máscara** `000.000.000-00`, **validado** quando preenchido (revisão 2026-07-05, abaixo) e **único** quando preenchido (revisão 2026-07-11, abaixo) |
 | Observacoes | string | opcional |
 | CriadoEm | DateTime | default now |
 
@@ -100,6 +100,17 @@ Schema preservado do legado Python. Migrations EF Core geradas sobre o banco SQL
 > (`PessoaService.CriarAsync`/`AtualizarAsync` lançam exceção — defesa em profundidade).
 > Helper: `CpfValidador.EhValido()` em `Services`. CPFs inválidos já existentes no banco não
 > são tocados — a regra só barra gravação nova/edição.
+>
+> **Unicidade de CPF (revisão 2026-07-11):** nomes iguais continuam permitidos (o CPF é o
+> desempate), mas **dois clientes não podem ter o mesmo CPF**. Defesa em duas camadas:
+> `PessoaService.CriarAsync`/`AtualizarAsync` verificam duplicidade antes de gravar (excluindo
+> o próprio registro em edição) e lançam "Este CPF já está cadastrado para o cliente [Nome].";
+> no banco, índice **único parcial** `ix_pessoas_cpf` (`CREATE UNIQUE INDEX IF NOT EXISTS ...
+> ON pessoas (cpf) WHERE cpf IS NOT NULL AND cpf != ''`) — nulo/vazio fica fora do índice,
+> então clientes sem CPF seguem ilimitados. Vale também para o cadastro rápido durante a venda
+> (mesmo `PessoaService`; o erro aparece no diálogo). **Atenção em bancos antigos:** se já
+> houver CPFs duplicados, a migration falha no start — resolver os duplicados pela tela de
+> Clientes (na versão anterior) antes de atualizar.
 
 ### `produtos`
 | Campo | Tipo | Regra |
@@ -214,6 +225,14 @@ Depois do primeiro start, a tela `/usuarios` permite criar/editar/excluir outras
 ### Vendas — nova (`/vendas/nova`)
 - Busca incremental de cliente ou toggle "Venda avulsa" — o dropdown do autocomplete mostra
   CPF/celular abaixo do nome para distinguir homônimos
+- **Cadastro rápido de cliente (2026-07-11):** quando a busca de cliente não retorna nenhum
+  resultado, o próprio dropdown mostra a opção **"+ Cadastrar [texto digitado] como novo
+  cliente"** (item sentinela com `Id = -1`). Selecioná-la abre o **mesmo** `PessoaDialog` de
+  `/pessoas` com o Nome já preenchido; ao salvar, o cliente recém-criado fica selecionado na
+  venda e o carrinho é preservado; cancelar volta ao campo de busca sem selecionar ninguém.
+  Passa pelas mesmas validações do `PessoaService` (CPF válido e único — o erro aparece no
+  diálogo). Para devolver o cliente criado, o `PessoaDialog` fecha com
+  `DialogResult.Ok(pessoa)` (compatível com os chamadores existentes, que só checam `Canceled`)
 - Select "Usuário" com todas as contas, **pré-carregado com o primeiro usuário ≠ `admin`**
   (na prática, `tikaum`); gravado na venda (coluna `usuario`) e editável antes de salvar
 - Adicionar item em abas na ordem **Serviço → Produto → Item Livre** (revisão 2026-07-08:
@@ -256,6 +275,15 @@ Depois do primeiro start, a tela `/usuarios` permite criar/editar/excluir outras
 - Status de último backup por destino (pen drive / Google Drive)
 - Botão backup manual
 - Seleção/reconfiguração do volume do pen drive
+- **Seção "Restaurar Backup" (2026-07-11):** aviso fixo em vermelho ("restaurar um backup
+  substituirá todos os dados atuais..."), botão **"Fazer backup agora antes de restaurar"**
+  (dispara o backup normal nos destinos disponíveis) e dois botões de origem — **Google Drive**
+  (primário) e **pen drive** (secundário) — que listam os backups disponíveis do mais recente
+  para o mais antigo (nome, data, tamanho). "Restaurar" em uma linha abre `ConfirmDialog` com
+  o aviso em vermelho; confirmado, o arquivo é baixado/copiado para
+  `data/tikaum_restore_pending.db` (com progress indicator) e a troca acontece **no próximo
+  start** (ver §9). Enquanto houver restore pendente, a seção mostra o estado pendente com
+  botão "Cancelar restauração pendente" (apaga o arquivo — o banco atual segue em uso)
 
 ### BackupBanner (componente global no Layout — substitui o BackupWarning em 2026-07-05)
 - Banner fixo **entre o topbar e o conteúdo** (largura da área de conteúdo, não sobrepõe nada;
@@ -269,6 +297,10 @@ Depois do primeiro start, a tela `/usuarios` permite criar/editar/excluir outras
     último backup também gera alerta vermelho — falha nunca é silenciosa
 - Cada alerta tem link "→ `/backup`" e botão [×] que fecha **temporariamente** (reaparece na
   próxima navegação enquanto a condição persistir)
+- **Restore pendente (2026-07-11):** alerta amarelo "Restauração de backup pendente. Reinicie
+  o sistema..." enquanto existir `data/tikaum_restore_pending.db`; e, no primeiro render após
+  um restore aplicado no startup, toast de sucesso "Banco restaurado com sucesso de [origem]
+  ([arquivo])" (consome `data/restore_done.json`)
 - Visível em **todas as telas** — não bloqueia uso; recheca a cada 30s
 
 ---
@@ -361,6 +393,34 @@ Preserva a lógica do legado Python, reescrita em C#:
   conexão não perde backup — o do dia seguinte inclui tudo) com bem menos peças móveis.*
 - **Nunca colocar o `.db` ativo em pasta sincronizada** (Drive Desktop, OneDrive etc.)
 
+### Restore de backup (2026-07-11)
+
+A lógica de backup acima não muda — o restore é só um caminho de volta:
+
+- **Agendamento (tela `/backup`, seção "Restaurar Backup"):** o snapshot escolhido é
+  baixado do Google Drive (`BaixarBackupGoogleDriveAsync(fileId)`) ou copiado do pen drive
+  (`CopiarBackupPenDriveAsync(filePath)`) para `data/tikaum_restore_pending.db` (escrita via
+  arquivo `.part` + rename; o conteúdo é validado pelo cabeçalho mágico do SQLite antes de
+  virar pendente). A listagem usa `ListarBackupsGoogleDriveAsync()` (uma busca só por padrão
+  de nome — o escopo `drive.file` já limita aos arquivos do app; cobre também backups antigos
+  soltos) e `ListarBackupsPenDriveAsync()` (`TikaumBackup/**/*.db` — subpastas por dia e
+  layout legado), ambas do mais recente para o mais antigo.
+- **Aplicação (próximo start, `Program.cs` → `BackupService.AplicarRestorePendente()`, ANTES
+  das migrations e de qualquer conexão):** `tikaum.db` vira
+  `tikaum_pre_restore_TIMESTAMP.db` — os arquivos `-wal`/`-shm` são renomeados junto
+  (pertencem ao banco antigo; um WAL órfão seria aplicado pelo SQLite sobre o banco
+  restaurado = corrupção) — e `tikaum_restore_pending.db` assume como `tikaum.db`. As
+  migrations rodam em seguida e atualizam o snapshot para o schema corrente. O evento é
+  logado; `restore_pending.json` (origem/arquivo) vira `restore_done.json`, que o
+  `BackupBanner` consome no primeiro render para o toast de sucesso.
+- **Guarda de instância dupla (verificada em teste real):** uma segunda instância morre em
+  silêncio só em `app.Run()` (porta ocupada) — tarde demais para o restore. Se a porta
+  configurada já responde, o restore **não** é aplicado (fica pendente, com aviso no log);
+  qualquer exceção na aplicação do restore também não impede o app de subir (o banco atual
+  segue em uso e a pendência continua).
+- O banco substituído **nunca é apagado** — `tikaum_pre_restore_*.db` fica em `data/` como
+  arrependimento de última instância.
+
 ---
 
 ## 10. Autostart no Windows
@@ -391,6 +451,47 @@ schtasks /create /tn "TikaumTech" /tr "caminho\TikaumTech.exe" /sc onlogon /ru C
 - `install.bat` apaga a instalação anterior em `C:\TikaumTech` (preservando `data\`)
   antes de copiar, e `build_release.bat` apaga `publish\` antes de publicar — evita
   misturar arquivos de versões diferentes após reinstalações sucessivas.
+
+### Scripts de build e implantação com responsabilidades separadas (revisão 2026-07-11)
+
+Substitui o modelo anterior em que o `install.bat` acumulava instalação e atualização e
+verificava/instalava o .NET (verificação da Rodada 38 — movida). Regra geral: **build e
+preparação do pacote acontecem na máquina do DESENVOLVEDOR** (Windows ou Linux); a máquina
+do estúdio só recebe o pacote pronto e executa `install.bat`/`update.bat`:
+
+- **`build_release.bat` — máquina do DESENVOLVEDOR (Windows).** Único que precisa de .NET:
+  verifica o SDK 9 (e instala via `dotnet-install.ps1` em `C:\Program Files\dotnet` + `setx
+  PATH` se ausente — lógica movida do `install.bat`, onde não pertencia), publica Release
+  win-x64 self-contained em `publish\` (limpa a anterior) e copia `install.bat` **e**
+  `update.bat` para dentro dela.
+- **`build_release.sh` — máquina do DESENVOLVEDOR (Linux; criado em 2026-07-11).** O .NET
+  faz **cross-publish win-x64 a partir do Linux** (self-contained, com o ícone embutido no
+  apphost — verificado em build real), então build e preparação do deploy acontecem na
+  máquina do dev; **a máquina do estúdio nunca compila** (antes, sem caminho Linux→Windows,
+  o build acabava sendo feito na máquina do estúdio). Mesmo fluxo do `.bat`: localiza o SDK
+  (PATH → `~/.dotnet`; instala em `~/.dotnet` se ausente; ativa modo invariante só no
+  processo de build se faltar libicu), limpa e publica `publish/`, copia
+  `install.bat`/`update.bat` **normalizando para CRLF** (working tree Linux costuma tê-los
+  em LF, e `cmd.exe` quebra com LF puro). Extras: argumento opcional com um diretório de
+  destino copia o pacote pronto como `TikaumTech_AAAA-MM-DD/` (ex.: pen drive montado —
+  o "deploy" sai da máquina do dev); `--linux` publica linux-x64 em `publish-linux/` com o
+  `install.sh` dentro (o instalador Linux já referenciava esse fluxo).
+- **`install.bat` — máquina do ESTÚDIO, PRIMEIRA instalação.** Não compila nem instala .NET
+  (o publish é self-contained). Se `C:\TikaumTech` já tem instalação, avisa e sugere o
+  `update.bat` (prossegue só com confirmação explícita). A cópia usa `robocopy /E /XD data
+  config /XF install.bat update.bat` — uma pasta `data\`/`config\` presente por engano na
+  origem **nunca** sobrescreve o banco/config do estúdio (antes o `xcopy /E` copiaria).
+  Mantém o restante do fluxo: senha do admin mascarada → `data\setup.json`, hosts +
+  `flushdns`, Tarefa Agendada no logon, atalho (`launch.vbs` + `.lnk`), inicia o app.
+- **`update.bat` — máquina do ESTÚDIO, ATUALIZAÇÕES (novo).** Aborta se não há instalação.
+  Para a tarefa/processo (`Stop-ScheduledTask` + `taskkill`, espera 3s), faz backup do banco
+  como `data\tikaum_pre_update_AAAAMMDD.db` **antes de qualquer cópia** (aborta se o backup
+  falhar), copia com o mesmo `robocopy` acima (`/R:3 /W:2` — sem o retry quase infinito
+  padrão do robocopy em arquivo travado; códigos 0–7 = sucesso), **verifica que
+  `data\tikaum.db` ainda existe** (se sumiu: restaura o backup e aborta com erro crítico) e
+  reinicia via `Start-ScheduledTask` (fallback: inicia o `.exe` direto se a tarefa não
+  existir). Nunca toca em `data\` nem `config\` — senha, hosts, tarefa e atalho não são
+  refeitos.
 
 **Opção 2 — Windows Service (mais robusto):**
 - Instalar `Microsoft.Extensions.Hosting.WindowsServices`

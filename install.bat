@@ -1,20 +1,14 @@
 @echo off
-echo Verificando .NET 9...
-dotnet --version >nul 2>&1
-if errorlevel 1 (
-    echo .NET 9 nao encontrado. Baixando e instalando...
-    powershell -Command "Invoke-WebRequest -Uri 'https://dot.net/v1/dotnet-install.ps1' -OutFile '%TEMP%\dotnet-install.ps1'"
-    powershell -ExecutionPolicy Bypass -File "%TEMP%\dotnet-install.ps1" -Channel 9.0 -InstallDir "C:\Program Files\dotnet"
-    del "%TEMP%\dotnet-install.ps1"
-    setx PATH "%PATH%;C:\Program Files\dotnet" /M
-    echo .NET 9 instalado. Continuando...
-)
+:: PRIMEIRA instalacao na maquina do ESTUDIO. Nao compila nada nem instala
+:: .NET: usa o publish\ ja gerado pelo build_release.bat (self-contained —
+:: a maquina do estudio nao precisa de .NET instalado). Para ATUALIZAR uma
+:: instalacao existente preservando os dados, use o update.bat.
 setlocal enabledelayedexpansion
 chcp 65001 >nul 2>&1
 
 echo.
 echo  ==========================================
-echo   TikaumTech ^| Instalador v2.1
+echo   TikaumTech ^| Instalador v3.0
 echo  ==========================================
 echo.
 
@@ -29,6 +23,22 @@ if %errorlevel% neq 0 (
 
 set "DEST=C:\TikaumTech"
 
+:: ---- Instalacao existente? Sugerir update.bat ------------------------
+:: Reinstalar por cima funciona (a logica abaixo preserva data\ e config\),
+:: mas o caminho certo para atualizacao e o update.bat — ele faz backup do
+:: banco antes de copiar e nao mexe em senha/hosts/tarefa/atalho.
+if exist "%DEST%\TikaumTech.exe" (
+    echo  AVISO: ja existe uma instalacao do TikaumTech em %DEST%.
+    echo  Para ATUALIZAR o sistema preservando todos os dados, feche esta
+    echo  janela e execute o update.bat em vez do install.bat.
+    echo.
+    set /p CONTINUAR="Continuar com a REINSTALACAO mesmo assim? (S/N): "
+    if /I not "!CONTINUAR!"=="S" (
+        echo  Instalacao cancelada. Use o update.bat para atualizar.
+        pause & exit /b 0
+    )
+)
+
 :: ---- Localizar pasta de origem (publish\) ----------------------------
 :: Se executado a partir da raiz do repo (antes do build_release.bat copiar
 :: este arquivo para publish\), o .exe nao esta em %~dp0 — nesse caso,
@@ -39,8 +49,9 @@ if not exist "%SRC%TikaumTech.exe" (
         set "SRC=%~dp0publish\"
     ) else (
         echo  ERRO: TikaumTech.exe nao encontrado.
-        echo  Rode build_release.bat primeiro e execute o install.bat
-        echo  de dentro da pasta publish\ gerada.
+        echo  Gere o pacote na maquina do desenvolvedor primeiro
+        echo  ^(build_release.bat no Windows ou build_release.sh no Linux^)
+        echo  e execute o install.bat de dentro da pasta gerada.
         pause & exit /b 1
     )
 )
@@ -85,19 +96,24 @@ goto esperar_liberar
 
 :: ---- [1/6] Copiar arquivos ------------------------------------------
 :: Remove a instalacao anterior (exceto data\ e config\) antes de copiar:
-:: o xcopy sozinho so sobrescreve, deixando DLLs e assets de versoes
-:: antigas misturados com os novos — receita para comportamento fantasma
-:: apos varias reinstalacoes. config\ guarda credenciais/token do Google
-:: Drive e chaves de criptografia — apagar obrigaria a reconectar a conta
-:: (e invalidaria o token criptografado) a cada atualizacao.
+:: copiar por cima sozinho so sobrescreve, deixando DLLs e assets de
+:: versoes antigas misturados com os novos — receita para comportamento
+:: fantasma apos varias reinstalacoes. config\ guarda credenciais/token do
+:: Google Drive e chaves de criptografia — apagar obrigaria a reconectar a
+:: conta (e invalidaria o token criptografado) a cada atualizacao.
 echo  [1/6] Instalando arquivos em %DEST%...
 if exist "%DEST%\TikaumTech.exe" (
     for /d %%D in ("%DEST%\*") do if /I not "%%~nxD"=="data" if /I not "%%~nxD"=="config" rd /s /q "%%D"
     del /q "%DEST%\*.*" >nul 2>&1
 )
 if not exist "%DEST%" mkdir "%DEST%"
-xcopy /E /I /Y /Q "%SRC%*" "%DEST%\" 1>nul
-if errorlevel 1 (
+:: robocopy no lugar do xcopy: /XD garante que uma pasta data\ ou config\
+:: presente por engano na origem (ex.: publish\ onde o .exe foi executado
+:: para teste) NUNCA sobrescreva o banco/config do estudio. /XF deixa os
+:: instaladores fora da instalacao. /R:3 /W:2 evita o retry infinito padrao
+:: do robocopy num arquivo travado. Codigos 0-7 do robocopy = sucesso.
+robocopy "%SRC%." "%DEST%" /E /XD data config /XF install.bat update.bat /R:3 /W:2 >nul
+if errorlevel 8 (
     echo  ERRO: falha ao copiar arquivos. Verifique permissoes.
     pause & exit /b 1
 )
@@ -193,16 +209,17 @@ start "" /D "%DEST%" "%DEST%\TikaumTech.exe"
 
 echo.
 echo  ==========================================
-echo   Instalacao concluida!
-echo   O navegador abrira automaticamente em
-echo   http://localhost:5000 assim que o
-echo   TikaumTech terminar de iniciar.
-echo   (http://tikaum-tech.local:5000 tambem
+echo   Instalacao concluida.
+echo   Acesse http://localhost:5000
+echo   (o navegador abrira automaticamente
+echo   assim que o TikaumTech terminar de
+echo   iniciar; http://tikaum-tech.local:5000
 echo   funciona como endereco alternativo)
 echo  ==========================================
 echo.
 echo  TikaumTech sera iniciado automaticamente
 echo  a cada logon do Windows, e ha um atalho
 echo  na area de trabalho para abrir manualmente.
+echo  Para futuras atualizacoes, use o update.bat.
 echo.
 pause
