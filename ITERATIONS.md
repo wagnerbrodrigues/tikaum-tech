@@ -277,18 +277,33 @@ campos afetados.
 **Trade-off assumido (não é o comportamento 100% literal pedido):** a formatação insere
 as barras progressivamente conforme os dígitos completam DD e MM (ex.: digitar `1007`
 mostra `10/07`), sem os placeholders `_` do exemplo original (`1_/__/____`) — isso exigiria
-o parâmetro `Mask` real, que é o combo comprovadamente quebrado. Também não foi
-implementada a mensagem inline "Data inválida" para datas impossíveis (ex. `32/13/2026`):
-o parse continua no `MudDatePicker`, que já ignorava silenciosamente texto inválido antes
-desta mudança — mostrar erro exigiria acesso ao texto bruto não exposto de forma direta
-pelo componente, escopo maior que o pedido original.
+o parâmetro `Mask` real, que é o combo comprovadamente quebrado.
+
+**Validação de data inválida (mesma rodada, follow-up):** ao investigar via reflection no
+`MudBlazor.dll` (sem acesso ao source, só o pacote NuGet compilado + XML docs — não havia
+navegador disponível pra testar ao vivo), confirmei que `MudDatePicker`/`MudBaseDatePicker`
+herdam de `MudFormComponent<T,U>`, que já trata falha de conversão automaticamente
+(`ConversionError`/`ConversionErrorMessage`, combinados em `HasErrors`/`GetErrorText()` —
+o mesmo mecanismo, já em produção, que exibe a mensagem da `Validation` do CPF em
+`PessoaDialog`). Ou seja, `32/13/2026` já ficava marcado como inválido sozinho — só que
+com a mensagem padrão em inglês do MudBlazor ("Not a valid date time"), porque o MudBlazor
+9.6 não embute tradução pt-BR (o pacote NuGet não tem satellite assembly `pt-*`; confirmado
+por busca no diretório do pacote). A correção não foi validar manualmente (reinventaria o
+que já existe) e sim traduzir: `Services/TikaumMudLocalizer.cs`, uma subclasse pública de
+`MudBlazor.MudLocalizer` (indexador virtual, mecanismo de override documentado pelo próprio
+MudBlazor) que intercepta só a chave `"Converter_InvalidDateTime"` (`MudBlazor.Resources.
+LanguageResource` é `internal`, por isso o nome é literal, não `nameof`) e devolve
+"Data inválida"; todas as outras chaves caem no `base[key]` (inglês, sem mudança).
+Registrada em `Program.cs` com `AddSingleton<MudLocalizer, TikaumMudLocalizer>()` antes de
+`AddMudServices(...)`.
 
 **Não verificado visualmente:** sem harness de navegador real disponível nesta sessão do
 sandbox (setup de libs/fontconfig de sessões anteriores não sobreviveu). Build limpo e
-113/113 testes passando, mas o comportamento de digitação/caret não foi confirmado em
-navegador de verdade — recomendo testar na máquina do estúdio antes de considerar
-fechado.
+113/113 testes passando, mas nem o comportamento de digitação/caret do `dateMask.js` nem a
+mensagem "Data inválida" do `TikaumMudLocalizer` foram confirmados em navegador de
+verdade — recomendo testar os dois na máquina do estúdio antes de considerar fechado.
 
 **Arquivos:** `wwwroot/js/dateMask.js` (novo), `Components/App.razor` (script tag),
+`Services/TikaumMudLocalizer.cs` (novo), `Program.cs` (registro do localizer),
 `Components/Pages/{Vendas,VendaEditDialog,PessoaDialog,VendasListagem,Relatorios}.razor`
 (classe `tk-data-mascarada` nos 7 `MudDatePicker`, comentários atualizados).

@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using MudBlazor;
 using MudBlazor.Services;
 using TikaumTech.Components;
 using TikaumTech.Components.Account;
@@ -90,6 +91,10 @@ builder.Services.AddIdentityCore<ApplicationUser>(options =>
 .AddDefaultTokenProviders();
 
 builder.Services.AddSingleton<IEmailSender<ApplicationUser>, IdentityNoOpEmailSender>();
+// MudBlazor 9 não traz tradução pt-BR embutida — sem isso, digitar uma data impossível
+// (ex. 32/13/2026) mostra "Not a valid date time" em inglês no meio de uma tela toda em
+// português. TikaumMudLocalizer traduz só essa mensagem.
+builder.Services.AddSingleton<MudLocalizer, TikaumMudLocalizer>();
 builder.Services.AddMudServices(config =>
 {
     // Toasts no canto inferior direito, empilhados (TIKAUM_SPEC.md §13)
