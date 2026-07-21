@@ -22,10 +22,12 @@
 <MudPaper Class="pa-4 mb-3" Elevation="1">
     <MudGrid>
         <MudItem xs="6" md="3">
-            <MudDatePicker @bind-Date="_inicio" Label="De" DateFormat="dd/MM/yyyy" Editable="true" Placeholder="dd/mm/aaaa" />
+            @* tk-data-mascarada: barras dd/mm/aaaa via wwwroot/js/dateMask.js — sem Mask do
+               MudDatePicker de propósito (ver Vendas.razor). *@
+            <MudDatePicker @bind-Date="_inicio" Label="De" DateFormat="dd/MM/yyyy" Editable="true" Placeholder="dd/mm/aaaa" Class="tk-data-mascarada" />
         </MudItem>
         <MudItem xs="6" md="3">
-            <MudDatePicker @bind-Date="_fim" Label="Até" DateFormat="dd/MM/yyyy" Editable="true" Placeholder="dd/mm/aaaa" />
+            <MudDatePicker @bind-Date="_fim" Label="Até" DateFormat="dd/MM/yyyy" Editable="true" Placeholder="dd/mm/aaaa" Class="tk-data-mascarada" />
         </MudItem>
         <MudItem xs="12" md="4">
             <MudAutocomplete T="Pessoa"

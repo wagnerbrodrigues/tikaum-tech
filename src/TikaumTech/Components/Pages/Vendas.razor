@@ -71,11 +71,13 @@
             </MudSelect>
         </MudItem>
         <MudItem xs="12" md="4">
-            @* Editable: permite digitar a data direto (além do picker). Sem DateMask de
-               propósito — o combo Editable+Mask do MudDatePicker perde a posição do caret
-               (teclas inserem sempre no início; verificado em navegador real). *@
+            @* Editable: permite digitar a data direto (além do picker). Sem DateMask do
+               MudDatePicker de propósito — o combo Editable+Mask perde a posição do caret
+               (teclas inserem sempre no início; verificado em navegador real). As barras
+               dd/mm/aaaa são inseridas em cima do <input> por wwwroot/js/dateMask.js
+               (classe tk-data-mascarada), sem esse bug. *@
             <MudDatePicker @bind-Date="_dataVenda" Label="Data" DateFormat="dd/MM/yyyy"
-                           Editable="true" Placeholder="dd/mm/aaaa" />
+                           Editable="true" Placeholder="dd/mm/aaaa" Class="tk-data-mascarada" />
         </MudItem>
     </MudGrid>
     <MudTextField @bind-Value="_observacao" Label="Observação (opcional)" Lines="2" MaxLength="500" Class="mt-3" />

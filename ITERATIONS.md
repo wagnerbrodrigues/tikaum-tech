@@ -246,3 +246,49 @@ sendo capturado, `Usuário 'admin' criado`/`Usuário 'tikaum' criado` seguem nor
 dashboard responde HTTP 200 (não a página de erro genérica) após login via `curl`, e o
 banner novo aparece no HTML com a lista de CPFs duplicados. 113/113 testes passando
 (109 anteriores + 4 novos).
+
+---
+
+## Ciclo 8 — Máscara automática nos campos de data (Rodada 42, 2026-07-21)
+
+**Objetivo:** os campos de data (`/vendas/nova`, edição de venda, cadastro de cliente,
+filtros de Vendas/Relatórios) não inseriam as barras `dd/mm/aaaa` automaticamente ao
+digitar — usuário relatou "a máscara para datas não funcionou" depois de testar.
+
+**Descoberta ao investigar:** não era regressão — nenhum campo de data jamais teve
+auto-formatação. E a opção óbvia (`Mask="@(new DateMask("dd/MM/yyyy"))"` no
+`MudDatePicker`, com `Editable="true"`) já tinha sido tentada antes, em `Vendas.razor` e
+`VendaEditDialog.razor`: o comentário existente documentava um bug verificado em
+navegador real — o combo `Editable`+`Mask` do `MudPicker<T>` (implementação separada do
+`Mask` do `MudTextField`, que funciona bem no CPF/Celular) faz o caret sempre voltar pro
+início ao digitar, tornando o campo inutilizável. Repetir essa combinação reintroduziria
+o mesmo bug.
+
+**Decisão:** em vez de trocar o `MudDatePicker` por um `MudTextField` mascarado (perderia
+o ícone de calendário sem uma reconstrução maior e não verificável visualmente neste
+sandbox), a formatação foi feita em JS puro (`wwwroot/js/dateMask.js`), no mesmo padrão
+de `shell.js` (listener delegado no `document`, sobrevive à navegação aprimorada do
+Blazor). O script reformata o `<input>` nativo por cima, em fase de captura, sem
+participar do parâmetro `Mask` do MudBlazor e sem round-trip por tecla com o Blazor — o
+parse da data continua acontecendo do jeito que já funcionava (no blur/enter, dentro do
+próprio `MudDatePicker`). Escopo por classe CSS (`tk-data-mascarada`) aplicada aos 7
+campos afetados.
+
+**Trade-off assumido (não é o comportamento 100% literal pedido):** a formatação insere
+as barras progressivamente conforme os dígitos completam DD e MM (ex.: digitar `1007`
+mostra `10/07`), sem os placeholders `_` do exemplo original (`1_/__/____`) — isso exigiria
+o parâmetro `Mask` real, que é o combo comprovadamente quebrado. Também não foi
+implementada a mensagem inline "Data inválida" para datas impossíveis (ex. `32/13/2026`):
+o parse continua no `MudDatePicker`, que já ignorava silenciosamente texto inválido antes
+desta mudança — mostrar erro exigiria acesso ao texto bruto não exposto de forma direta
+pelo componente, escopo maior que o pedido original.
+
+**Não verificado visualmente:** sem harness de navegador real disponível nesta sessão do
+sandbox (setup de libs/fontconfig de sessões anteriores não sobreviveu). Build limpo e
+113/113 testes passando, mas o comportamento de digitação/caret não foi confirmado em
+navegador de verdade — recomendo testar na máquina do estúdio antes de considerar
+fechado.
+
+**Arquivos:** `wwwroot/js/dateMask.js` (novo), `Components/App.razor` (script tag),
+`Components/Pages/{Vendas,VendaEditDialog,PessoaDialog,VendasListagem,Relatorios}.razor`
+(classe `tk-data-mascarada` nos 7 `MudDatePicker`, comentários atualizados).

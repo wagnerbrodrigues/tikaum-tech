@@ -50,10 +50,11 @@
                 </MudSelect>
             </MudItem>
             <MudItem xs="12" md="4">
-                @* Editable sem DateMask: digitável, igual à tela de nova venda (o combo
-                   Editable+Mask perde a posição do caret — ver Vendas.razor) *@
+                @* Editable sem Mask do MudDatePicker: digitável, igual à tela de nova venda (o
+                   combo Editable+Mask perde a posição do caret — ver Vendas.razor). Barras
+                   dd/mm/aaaa via wwwroot/js/dateMask.js (classe tk-data-mascarada). *@
                 <MudDatePicker @bind-Date="_data" Label="Data" DateFormat="dd/MM/yyyy"
-                               Editable="true" Placeholder="dd/mm/aaaa" />
+                               Editable="true" Placeholder="dd/mm/aaaa" Class="tk-data-mascarada" />
             </MudItem>
         </MudGrid>
         <MudTextField @bind-Value="_observacao" Label="Observação (opcional)" Lines="2" MaxLength="500" Class="mt-2 mb-3" />

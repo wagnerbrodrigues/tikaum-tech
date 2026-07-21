@@ -6,7 +6,9 @@
         <MudForm @ref="_form">
             <MudTextField @bind-Value="_model.Nome" Label="Nome" Required="true"
                           RequiredError="Nome é obrigatório." MaxLength="200" Counter="200" Class="mb-3" />
-            <MudDatePicker @bind-Date="_model.DataNascimento" Label="Data de nascimento" Class="mb-3" DateFormat="dd/MM/yyyy" Editable="true" Placeholder="dd/mm/aaaa" />
+            @* tk-data-mascarada: barras dd/mm/aaaa auto-inseridas por wwwroot/js/dateMask.js
+               ao digitar. Não usa o Mask do MudDatePicker de propósito — ver Vendas.razor. *@
+            <MudDatePicker @bind-Date="_model.DataNascimento" Label="Data de nascimento" Class="mb-3 tk-data-mascarada" DateFormat="dd/MM/yyyy" Editable="true" Placeholder="dd/mm/aaaa" />
             @* MudTextField com Mask, não MudMask cru: o MudMask sozinho renderiza sem o wrapper
                mud-input-control — Label, HelperText e mensagem de validação nunca aparecem
                (campo só ficava vermelho, sem texto de erro). *@

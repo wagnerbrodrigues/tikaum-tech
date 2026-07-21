@@ -49,9 +49,9 @@ if not exist "%SRC%TikaumTech.exe" (
         set "SRC=%~dp0publish\"
     ) else (
         echo  ERRO: TikaumTech.exe nao encontrado.
-        echo  Gere o pacote na maquina do desenvolvedor primeiro
-        echo  ^(build_release.bat no Windows ou build_release.sh no Linux^)
-        echo  e execute o install.bat de dentro da pasta gerada.
+        echo  Rode build_release.bat primeiro, na raiz do repositorio
+        echo  ^(gera a pasta publish\ com o .exe e uma copia deste script^),
+        echo  e execute o install.bat de dentro da pasta publish\ gerada.
         pause & exit /b 1
     )
 )
